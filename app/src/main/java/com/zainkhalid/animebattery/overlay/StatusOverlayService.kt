@@ -24,6 +24,12 @@ import com.zainkhalid.animebattery.battery.BatteryState
 import com.zainkhalid.animebattery.battery.BatteryStateMachine
 import com.zainkhalid.animebattery.characters.Characters
 import com.zainkhalid.animebattery.settings.AppSettings
+import com.zainkhalid.animebattery.widget.BatteryBuddyWidget
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Puts the character badge over the stock battery icon.
@@ -64,6 +70,9 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
     }
 
     private var attached = false
+    private var widgetLevel = -1
+    private var widgetState: BatteryState? = null
+    private val widgetScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var fullAttached = false
     private var screenOn = true
     private var powerSave = false
@@ -151,6 +160,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
         handler.removeCallbacksAndMessages(null)
         detach()
         full.release()
+        widgetScope.cancel()
         runCatching { unregisterReceiver(receiver) }
         settings.prefs.unregisterOnSharedPreferenceChangeListener(this)
         instance = null
@@ -165,15 +175,8 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
         badge.art = Characters.byId(settings.characterId)
         badge.showPercent = settings.showPercent
         full.view.characterId = settings.characterId
-        full.view.sizeDp = settings.characterSizeDp
-        full.view.spot = when (settings.characterSpot) {
-            AppSettings.SPOT_LEAN -> FullBarView.Spot.IslandLean
-            AppSettings.SPOT_PEEK -> FullBarView.Spot.IslandPeek
-            else -> FullBarView.Spot.Battery
-        }
-        full.view.islandOn = settings.islandOn
-        full.view.islandWidthDp = settings.islandWidthDp
-        full.view.sparkles = settings.sparkles
+        full.view.layout = settings.barLayout
+        full.view.sparklesAroundCamera = settings.sparkles
         pushState()
     }
 
@@ -202,6 +205,12 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
         badge.animator.animationsEnabled = settings.animations && !powerSave && screenOn && attached
         badge.show(state, s.level)
         full.show(state, s.level, settings.animations && !powerSave && screenOn)
+        // Home screen widgets only need a redraw when what they show changes.
+        if (s.level != widgetLevel || state != widgetState) {
+            widgetLevel = s.level
+            widgetState = state
+            widgetScope.launch { runCatching { BatteryBuddyWidget.refresh(this@StatusOverlayService) } }
+        }
     }
 
     private fun scheduleMeasure(delayMs: Long) {

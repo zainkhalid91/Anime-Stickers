@@ -2,6 +2,10 @@ package com.zainkhalid.animebattery
 
 import android.content.Intent
 import android.os.Bundle
+import com.zainkhalid.animebattery.ui.WidgetsScreen
+import com.zainkhalid.animebattery.ui.WallpaperScreen
+import com.zainkhalid.animebattery.ui.EditorScreen
+import com.zainkhalid.animebattery.ui.Dest
 import com.zainkhalid.animebattery.ui.HomeScreen
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.TextButton
@@ -65,19 +69,24 @@ class MainActivity : ComponentActivity() {
                         Modifier.windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        var explore by rememberSaveable { mutableStateOf(false) }
-                        BackHandler(enabled = explore) { explore = false }
-                        if (!explore) {
-                            HomeScreen(onOpenSamples = { explore = true })
-                        } else {
-                            TextButton(onClick = { explore = false }) { Text("‹ Back") }
-                            var tab by rememberSaveable { mutableIntStateOf(0) }
-                            PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
-                                Tab(tab == 0, { tab = 0 }, text = { Text("Ideas") })
-                                Tab(tab == 1, { tab = 1 }, text = { Text("Badge preview") })
+                        var dest by rememberSaveable { mutableStateOf(Dest.Home) }
+                        BackHandler(enabled = dest != Dest.Home) { dest = Dest.Home }
+                        val back = { dest = Dest.Home }
+                        when (dest) {
+                            Dest.Home -> HomeScreen(go = { dest = it })
+                            Dest.Editor -> EditorScreen(onClose = back)
+                            Dest.Wallpapers -> WallpaperScreen(onClose = back)
+                            Dest.Widgets -> WidgetsScreen(onClose = back)
+                            Dest.Ideas -> {
+                                TextButton(onClick = back) { Text("‹ Back") }
+                                var tab by rememberSaveable { mutableIntStateOf(0) }
+                                PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
+                                    Tab(tab == 0, { tab = 0 }, text = { Text("Ideas") })
+                                    Tab(tab == 1, { tab = 1 }, text = { Text("Badge preview") })
+                                }
+                                if (tab == 0) LabScreen()
+                                else PreviewScreen(Characters.byId(AppSettings(this@MainActivity).characterId), showPercent = true, size = 1f)
                             }
-                            if (tab == 0) LabScreen()
-                            else PreviewScreen(Characters.byId(AppSettings(this@MainActivity).characterId), showPercent = true, size = 1f)
                         }
                     }
                 }

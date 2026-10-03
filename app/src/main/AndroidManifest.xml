@@ -7,6 +7,9 @@
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Camera-hole wallpapers. -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+
     <!-- Wi-Fi state for our own status bar. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
@@ -29,6 +32,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".widget.BatteryBuddyReceiver"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/battery_buddy_widget" />
+        </receiver>
 
         <service
             android:name=".overlay.StatusOverlayService"

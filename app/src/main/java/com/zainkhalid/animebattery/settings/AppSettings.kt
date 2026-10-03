@@ -2,6 +2,8 @@ package com.zainkhalid.animebattery.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.zainkhalid.animebattery.decor.BarLayout
+import com.zainkhalid.animebattery.decor.Pose
 
 /**
  * User settings, shared by the app UI and the overlay service (same process).
@@ -51,31 +53,35 @@ class AppSettings(context: Context) {
         get() = prefs.getFloat(CHARACTER_SIZE, 40f)
         set(v) = prefs.edit().putFloat(CHARACTER_SIZE, v.coerceIn(24f, 56f)).apply()
 
-    /** Where the character lives in the full bar: "battery", "lean" or "peek". */
+    /** Where the character lives in the full bar: "battery" or "camera" (older values map to camera). */
     var characterSpot: String
-        get() = prefs.getString(SPOT, SPOT_BATTERY)!!
+        get() = when (val v = prefs.getString(SPOT, SPOT_BATTERY)) {
+            SPOT_BATTERY, SPOT_CAMERA -> v
+            else -> SPOT_CAMERA
+        }
         set(v) = prefs.edit().putString(SPOT, v).apply()
-
-    var islandOn: Boolean
-        get() = prefs.getBoolean(ISLAND, true)
-        set(v) = prefs.edit().putBoolean(ISLAND, v).apply()
-
-    /** 64 to 180 dp. */
-    var islandWidthDp: Float
-        get() = prefs.getFloat(ISLAND_WIDTH, 104f)
-        set(v) = prefs.edit().putFloat(ISLAND_WIDTH, v.coerceIn(64f, 180f)).apply()
 
     var sparkles: Boolean
         get() = prefs.getBoolean(SPARKLES, true)
         set(v) = prefs.edit().putBoolean(SPARKLES, v).apply()
 
+    /** The custom bar: pose, size, sway and placed decorations. */
+    var barLayout: BarLayout
+        get() = BarLayout.fromJson(prefs.getString(LAYOUT, null))
+            ?: BarLayout(characterSizeDp = characterSizeDp, pose = if (characterSpot == SPOT_CAMERA) Pose.Camera else Pose.Hanging)
+        set(v) = prefs.edit().putString(LAYOUT, v.toJson()).apply()
+
+    /** Id of the collection last applied, for the "Applied" badge. */
+    var themeId: String?
+        get() = prefs.getString(THEME, null)
+        set(v) = prefs.edit().putString(THEME, v).apply()
+
     companion object {
+        const val LAYOUT = "bar_layout"
+        const val THEME = "theme_id"
         const val SPOT = "character_spot"
         const val SPOT_BATTERY = "battery"
-        const val SPOT_LEAN = "lean"
-        const val SPOT_PEEK = "peek"
-        const val ISLAND = "island"
-        const val ISLAND_WIDTH = "island_width_dp"
+        const val SPOT_CAMERA = "camera"
         const val SPARKLES = "sparkles"
         const val BAR_MODE = "bar_mode"
         const val MODE_BADGE = "badge"

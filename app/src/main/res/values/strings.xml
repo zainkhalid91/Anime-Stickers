@@ -2,4 +2,5 @@
     <string name="app_name">Anime Battery</string>
     <string name="service_label">Anime Battery overlay</string>
     <string name="service_description">Draws your chosen character in the status bar where the battery icon was. It reads which system windows are open (so it hides while the notification shade is down), and samples a few pixels just below the status bar so its own bar matches the colour of the app you are in. Nothing is saved or sent anywhere.</string>
+    <string name="widget_description">Your character and battery level. Resize it for a pill, a mood face, or the full battery buddy.</string>
 </resources>

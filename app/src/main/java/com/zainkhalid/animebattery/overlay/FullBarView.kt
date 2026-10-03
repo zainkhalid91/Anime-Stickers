@@ -15,6 +15,10 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import com.zainkhalid.animebattery.battery.BatteryState
 import com.zainkhalid.animebattery.characters.CharacterAnimator
 import com.zainkhalid.animebattery.characters.Characters
+import com.zainkhalid.animebattery.decor.BarLayout
+import com.zainkhalid.animebattery.decor.DecorPainter
+import com.zainkhalid.animebattery.decor.DecorType
+import com.zainkhalid.animebattery.decor.Pose
 import com.zainkhalid.animebattery.render.StickerCache
 import kotlin.math.PI
 import kotlin.math.roundToInt
@@ -22,35 +26,27 @@ import kotlin.math.sin
 
 /**
  * Our own status bar, drawn over the real one. Because the whole bar is ours the
- * character can be any size, hang below the bar, or sit on an "island" drawn round
- * the camera hole (the iPhone Dynamic Island sticker look).
+ * character can be any size, hang from the camera, or be swapped for big eyes, and
+ * decorations can go anywhere.
  *
- * Left: clock. Centre: island. Right: signal, Wi-Fi, battery, and the character when
- * it lives at the battery end.
+ * Left: clock. Middle: camera (with whatever pose lives there). Right: signal,
+ * Wi-Fi, percent, battery icon, and the character when it stands at the battery.
  *
- * Drawing allocates nothing: paints, paths and rects are fields; the clock string is
- * rebuilt once a minute.
+ * Frame rate: 10 fps only while something visibly moves (sway, floating decor, the
+ * charging orb); otherwise the character animator's slow idle clock; 0 when nothing moves.
  */
 class FullBarView(context: Context) : View(context) {
 
-    enum class Spot { Battery, IslandLean, IslandPeek }
-
     private val d = resources.displayMetrics.density
 
-    // Set by the service / preview.
+    // Set by the service / preview / editor.
     var barHeight = (24 * d).roundToInt()
     var startPad = 40f * d
     var endPad = 40f * d
     var characterId = Characters.all.first().id
-    var sizeDp = 40f
-        set(v) { field = v; layoutChanged() }
-    var spot = Spot.Battery
-        set(v) { field = v; layoutChanged() }
-    var islandOn = true
-        set(v) { field = v; layoutChanged() }
-    var islandWidthDp = 104f
-        set(v) { field = v; layoutChanged() }
-    var sparkles = true
+    var layout = BarLayout()
+        set(v) { field = v; layoutChanged(); kick() }
+    var sparklesAroundCamera = true
         set(v) { field = v; invalidate() }
     /** Camera hole bounds in this view's coordinates; empty = centre of the bar. */
     val cutout = RectF()
@@ -60,56 +56,66 @@ class FullBarView(context: Context) : View(context) {
     var state = BatteryState.Mid
     val animator = CharacterAnimator(seed = SystemClock.uptimeMillis())
 
-    /** Called when the window height must change (bigger character). */
+    /** Called when the window height must change (bigger character, hanging thread). */
     var onSizeNeeded: ((Int) -> Unit)? = null
 
     private var bg = Color.BLACK
     private var bgTarget = Color.BLACK
     private var ink = Color.WHITE
     private var clockText = ""
-    private var sparkleStep = 0
+    private var step = 0
+    private var phase = 0f
 
+    private val decor = DecorPainter(d)
     private val font = Typeface.create("google-sans-flex", Typeface.NORMAL)
     private val clockPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create(font, 500, false) }
     private val pctPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create(font, 700, false) }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val dim = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bgPaint = Paint()
-    private val islandPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val orb = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val sparkle = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val thread = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val orbLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val battLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val path = Path()
     private val rect = RectF()
-    private val island = RectF()
+    private val cam = RectF()
+    private val battery = RectF()
     private val tick = Runnable { tickNow() }
 
     init { updateClock() }
 
     // ── Layout ────────────────────────────────────────────────────────────
 
-    private val sizePx get() = sizeDp * d
+    private val sizePx get() = layout.characterSizeDp * d
 
-    private fun islandRect(out: RectF) {
-        // Android reports the cutout as a strip the full height of the status bar, so
-        // use its width (lens plus margin) and assume the lens sits as far down from the
-        // top as it is in from the sides.
+    /** The camera lens. Android reports the cutout as a full-height strip, so use its width. */
+    private fun cameraRect(out: RectF) {
         val cx = if (cutout.isEmpty) width / 2f else cutout.centerX()
         val cy = if (cutout.isEmpty) barHeight / 2f else cutout.top + cutout.width() / 2f
-        val h = if (cutout.isEmpty) barHeight * 0.58f else minOf(barHeight * 0.62f, cutout.width() * 0.82f)
-        val w = maxOf(islandWidthDp * d, h)
-        out.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        val r = if (cutout.isEmpty) barHeight * 0.2f else cutout.width() * 0.32f
+        out.set(cx - r, cy - r, cx + r, cy + r)
     }
 
-    /** Where the character's top-left goes, for the current spot. */
-    private fun characterTop(): Float = ((barHeight - sizePx) / 2f).coerceAtLeast(2f * d)
+    private fun standingTop(): Float = ((barHeight - sizePx) / 2f).coerceAtLeast(2f * d)
 
-    /** Total window height: the bar plus whatever the character hangs below it. */
+    /** Thread length for the hanging pose: longer as the battery runs down. */
+    private fun threadLength(): Float = sizePx * 0.25f + sizePx * 0.9f * (100 - level) / 100f
+
+    /** Total window height: the bar plus anything hanging below it. */
     fun neededHeight(): Int {
-        val bottom = characterTop() + sizePx + 4f * d
-        return maxOf(barHeight, bottom.roundToInt())
+        cameraRect(rect)
+        var bottom = when (layout.pose) {
+            Pose.Hanging -> rect.bottom + sizePx * 1.15f + sizePx * 0.25f + sizePx * 0.9f
+            Pose.Eyes -> barHeight.toFloat()
+            else -> standingTop() + sizePx + 4f * d
+        }
+        for (item in layout.decor) {
+            if (item.type == DecorType.Web || item.type == DecorType.Wings) continue
+            bottom = maxOf(bottom, item.y * d + decor.base * item.scale * 1.6f)
+        }
+        return maxOf(barHeight, bottom.roundToInt() + (6 * d).roundToInt())
     }
 
     private fun layoutChanged() {
@@ -143,6 +149,14 @@ class FullBarView(context: Context) : View(context) {
         tickNow()
     }
 
+    /** True when something on the bar moves continuously and needs the 10 fps clock. */
+    private fun needsMotion(): Boolean {
+        if (!animator.animationsEnabled) return false
+        if (layout.pose == Pose.Hanging && layout.sway) return true
+        if (state == BatteryState.Charging && layout.pose != Pose.Eyes) return true
+        return layout.decor.any { it.type in MOVING }
+    }
+
     private fun tickNow() {
         val now = SystemClock.uptimeMillis()
         animator.pxPerUnit = sizePx / 27.6f
@@ -152,18 +166,23 @@ class FullBarView(context: Context) : View(context) {
             if (closeEnough(bg, bgTarget)) bg = bgTarget
             changed = true
         }
-        // Sparkles twinkle at 2 steps a second, only while animations run.
-        val twinkle = sparkles && islandOn && animator.animationsEnabled
+        val motion = needsMotion()
+        if (motion) {
+            phase = (now % MOTION_PERIOD_MS).toFloat() / MOTION_PERIOD_MS
+            changed = true
+        }
+        val twinkle = animator.animationsEnabled &&
+            (sparklesAroundCamera || layout.pose == Pose.Eyes || layout.decor.any { it.type == DecorType.Sparkle })
         if (twinkle) {
-            val step = (now / SPARKLE_STEP_MS).toInt()
-            if (step != sparkleStep) { sparkleStep = step; changed = true }
+            val s = (now / STEP_MS).toInt()
+            if (s != step) { step = s; changed = true }
         }
         if (changed) invalidate()
 
-        val fading = bg != bgTarget
         var delay = animator.nextDelayMs()
-        if (twinkle) delay = if (delay < 0) SPARKLE_STEP_MS - now % SPARKLE_STEP_MS else minOf(delay, SPARKLE_STEP_MS)
-        if (fading) delay = 40
+        if (twinkle) delay = if (delay < 0) STEP_MS - now % STEP_MS else minOf(delay, STEP_MS)
+        if (motion) delay = MOTION_FRAME_MS
+        if (bg != bgTarget) delay = 40
         if (delay >= 0 && isAttachedToWindow) postDelayed(tick, delay)
     }
 
@@ -193,22 +212,31 @@ class FullBarView(context: Context) : View(context) {
         clockPaint.textSize = 14.5f * d
         c.drawText(clockText, startPad, cy - (clockPaint.ascent() + clockPaint.descent()) / 2f, clockPaint)
 
-        val sticker = StickerCache.get(context, characterId, sizePx.roundToInt())?.asAndroidBitmap()
+        val sticker = if (layout.pose == Pose.Eyes) null
+        else StickerCache.get(context, characterId, sizePx.roundToInt())?.asAndroidBitmap()
         val sw = sticker?.width?.toFloat() ?: sizePx * 0.76f
-        islandRect(island)
+        cameraRect(cam)
+        fill.color = ink
+        dim.color = Color.argb(80, Color.red(ink), Color.green(ink), Color.blue(ink))
 
-        // Right cluster. With the character at the battery end it takes the last slot;
-        // otherwise a compact battery icon does.
+        // Right cluster, right to left: [character] battery percent wifi signal.
         var x = w - endPad
-        if (spot == Spot.Battery) {
+        if (layout.pose == Pose.Battery && sticker != null) {
             x -= sw
-            if (sticker != null) drawCharacter(c, sticker, x, characterTop())
-            x -= 3f * d
-        } else {
-            x -= 24f * d
-            drawBatteryIcon(c, x, cy, 24f * d, 12f * d, light)
+            if (layout.decor.any { it.type == DecorType.Wings }) x -= 10f * d
+            drawCharacter(c, sticker, x, standingTop())
             x -= 4f * d
         }
+        x -= 24f * d
+        battery.set(x, cy - 6f * d, x + 24f * d, cy + 6f * d)
+        drawBatteryIcon(c, battery, light)
+        val hasWings = layout.decor.any { it.type == DecorType.Wings }
+        if (hasWings) {
+            val flap = if (animator.animationsEnabled) sin(2 * PI * phase * 4).toFloat() * 0.5f + 0.5f else 0f
+            decor.wings(c, battery, flap)
+        }
+        // Leave room for the left wing so it doesn't sit on the percent.
+        x -= if (hasWings) 15f * d else 5f * d
         pctPaint.textSize = 13.5f * d
         pctPaint.color = when (state) {
             BatteryState.Critical, BatteryState.Low -> Color.rgb(255, 84, 84)
@@ -219,8 +247,6 @@ class FullBarView(context: Context) : View(context) {
         x -= pctPaint.measureText(pct)
         c.drawText(pct, x, cy - (pctPaint.ascent() + pctPaint.descent()) / 2f, pctPaint)
 
-        fill.color = ink
-        dim.color = Color.argb(80, Color.red(ink), Color.green(ink), Color.blue(ink))
         x -= 6f * d
         if (wifiLevel >= 0) {
             val r = 8.6f * d
@@ -236,26 +262,56 @@ class FullBarView(context: Context) : View(context) {
             x += barW + 1.4f * d
         }
 
-        // Island and its character. Peek: character first, half tucked behind the island's
-        // left end, so it looks round the corner at you.
-        if (islandOn) {
-            if (spot == Spot.IslandPeek && sticker != null) {
-                drawCharacter(c, sticker, island.left - sw * 0.62f, characterTop())
-            }
-            val r = island.height() / 2f
-            c.drawRoundRect(island, r, r, islandPaint)
-            if (sparkles) drawSparkles(c)
-            if (spot == Spot.IslandLean && sticker != null) {
-                drawCharacter(c, sticker, island.right - sw * 0.22f, characterTop())
-            }
-        } else if (spot != Spot.Battery && sticker != null) {
-            drawCharacter(c, sticker, w / 2f - sw / 2f, characterTop())
+        // Placed decorations.
+        for (item in layout.decor) {
+            if (item.type == DecorType.Wings) continue
+            decor.draw(c, item.type, item.x * w, item.y * d, item.scale, step, phase)
         }
+        if (sparklesAroundCamera) drawCameraSparkles(c)
+
+        // The pose that lives at the camera.
+        when (layout.pose) {
+            Pose.Camera -> if (sticker != null) drawCharacter(c, sticker, cam.right + 6f * d, standingTop())
+            Pose.Hanging -> if (sticker != null) drawHanging(c, sticker, sw)
+            Pose.Eyes -> drawEyes(c)
+            Pose.Battery -> Unit
+        }
+    }
+
+    private fun drawHanging(c: Canvas, sticker: Bitmap, sw: Float) {
+        val swing = if (layout.sway && animator.animationsEnabled) sin(2 * PI * phase).toFloat() * 7f else 0f
+        val px = cam.centerX()
+        val py = cam.bottom - cam.height() * 0.2f
+        val len = threadLength()
+        c.save()
+        c.rotate(swing, px, py)
+        thread.color = if (luminance(bg) > 0.55f) 0xAA333333.toInt() else 0xCCFFFFFF.toInt()
+        thread.strokeWidth = 1.4f * d
+        c.drawLine(px, py, px, py + len, thread)
+        // The sticker hangs from the end of the thread by the top of its head.
+        drawCharacter(c, sticker, px - sw / 2f, py + len - sizePx * 0.06f)
+        c.restore()
+    }
+
+    private fun drawEyes(c: Canvas) {
+        val rad = barHeight * 0.26f
+        val gap = rad * 2.1f
+        val t = animator.frame.timeMs
+        // Glance somewhere new every ~3 s.
+        val look = when (((t / 3000) % 4).toInt()) { 1 -> 0.8f; 3 -> -0.8f; else -> 0f }
+        val sleepy = when (state) {
+            BatteryState.Critical -> 0.8f
+            BatteryState.Low -> 0.5f
+            BatteryState.PowerSaver -> 1f
+            else -> 0f
+        }
+        val shut = if (animator.frame.blink) 1f else sleepy
+        decor.eyes(c, cam.centerX(), cam.centerY() + 1f * d, rad, gap, look, shut, bg)
     }
 
     private fun drawCharacter(c: Canvas, sticker: Bitmap, left: Float, top: Float) {
         val f = animator.frame
-        val bob = f.bob * animator.pxPerUnit
+        val bob = if (layout.pose == Pose.Hanging) 0f else f.bob * animator.pxPerUnit
         val p = f.transition
         val squash = if (p < 1f) sin(PI * p).toFloat() else 0f
         val s = sizePx
@@ -268,44 +324,34 @@ class FullBarView(context: Context) : View(context) {
         }
     }
 
-    private fun drawBatteryIcon(c: Canvas, left: Float, cy: Float, w: Float, h: Float, light: Boolean) {
-        val top = cy - h / 2f
+    private fun drawCameraSparkles(c: Canvas) {
+        val r = cam.height() / 2f + 2f * d
+        for (i in 0 until 4) {
+            val bright = (i + step) % 2 == 0
+            val size = (if (bright) 4.2f else 2.6f) * d
+            val sx = if (i < 2) cam.left - (8f + i * 10f) * d else cam.right + (8f + (i - 2) * 10f) * d
+            val sy = cam.centerY() + (if (i % 2 == 0) -r * 0.55f else r * 0.6f)
+            decor.sparkle(c, sx, sy, size, if (i % 2 == 0) 0xFFFFE27A.toInt() else 0xFFFF9EC7.toInt())
+        }
+    }
+
+    private fun drawBatteryIcon(c: Canvas, b: RectF, light: Boolean) {
+        val hgt = b.height()
         battLine.strokeWidth = 1.4f * d
         battLine.color = dim.color
-        rect.set(left, top, left + w - 2.5f * d, top + h)
-        c.drawRoundRect(rect, h * 0.3f, h * 0.3f, battLine)
-        rect.set(left + w - 2f * d, cy - h * 0.2f, left + w, cy + h * 0.2f)
+        rect.set(b.left, b.top, b.right - 2.5f * d, b.bottom)
+        c.drawRoundRect(rect, hgt * 0.3f, hgt * 0.3f, battLine)
+        rect.set(b.right - 2f * d, b.centerY() - hgt * 0.2f, b.right, b.centerY() + hgt * 0.2f)
         c.drawRoundRect(rect, d, d, dim)
         fill.color = when (state) {
             BatteryState.Critical, BatteryState.Low -> Color.rgb(255, 84, 84)
             BatteryState.Charging, BatteryState.Charged -> if (light) Color.rgb(20, 160, 80) else Color.rgb(90, 230, 140)
             else -> ink
         }
-        val inner = w - 2.5f * d - 4f * d
-        rect.set(left + 2f * d, top + 2f * d, left + 2f * d + inner * level / 100f, top + h - 2f * d)
-        c.drawRoundRect(rect, h * 0.2f, h * 0.2f, fill)
+        val inner = b.width() - 2.5f * d - 4f * d
+        rect.set(b.left + 2f * d, b.top + 2f * d, b.left + 2f * d + inner * level / 100f, b.bottom - 2f * d)
+        c.drawRoundRect(rect, hgt * 0.2f, hgt * 0.2f, fill)
         fill.color = ink
-    }
-
-    private fun drawSparkles(c: Canvas) {
-        // Four little stars round the island, two of them bright on alternate steps.
-        val r = island.height() / 2f
-        for (i in 0 until 4) {
-            val bright = (i + sparkleStep) % 2 == 0
-            val size = (if (bright) 4.2f else 2.6f) * d
-            val sx = if (i < 2) island.left - (6f + i * 9f) * d else island.right + (6f + (i - 2) * 9f) * d
-            val sy = island.centerY() + (if (i % 2 == 0) -r * 0.55f else r * 0.6f)
-            sparkle.color = if (i % 2 == 0) 0xFFFFE27A.toInt() else 0xFFFF9EC7.toInt()
-            sparkle.alpha = if (bright) 255 else 150
-            path.reset()
-            path.moveTo(sx, sy - size)
-            path.quadTo(sx, sy, sx + size, sy)
-            path.quadTo(sx, sy, sx, sy + size)
-            path.quadTo(sx, sy, sx - size, sy)
-            path.quadTo(sx, sy, sx, sy - size)
-            path.close()
-            c.drawPath(path, sparkle)
-        }
     }
 
     private fun drawWifi(c: Canvas, cx: Float, cy: Float, r: Float, lvl: Int) {
@@ -351,7 +397,10 @@ class FullBarView(context: Context) : View(context) {
             kotlin.math.abs(Color.blue(a) - Color.blue(b)) < 3
 
     companion object {
-        private const val SPARKLE_STEP_MS = 500L
+        private const val STEP_MS = 500L
+        private const val MOTION_FRAME_MS = 100L
+        private const val MOTION_PERIOD_MS = 2600L
+        private val MOVING = setOf(DecorType.Heart, DecorType.Ghost, DecorType.Spider, DecorType.Leaf, DecorType.Wings)
         private val PERCENT = Array(101) { "$it%" }
     }
 }
