@@ -2,6 +2,7 @@ package com.zainkhalid.animebattery
 
 import android.content.Intent
 import android.os.Bundle
+import com.zainkhalid.animebattery.ui.LiveBarCard
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.safeDrawing
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text("Anime Battery", style = MaterialTheme.typography.displaySmall)
                         Text("Naruto Uzumaki · Naruto (fan art)", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LiveBarCard()
                         var tab by rememberSaveable { mutableIntStateOf(0) }
                         PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
                             Tab(tab == 0, { tab = 0 }, text = { Text("Samples") })

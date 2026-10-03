@@ -2,10 +2,11 @@
 <!-- Window events tell us when the shade opens or the status bar hides.
      Window content lets the spike measure the stock battery icon's bounds. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
     android:description="@string/service_description"
     android:isAccessibilityTool="false"
     android:notificationTimeout="100" />

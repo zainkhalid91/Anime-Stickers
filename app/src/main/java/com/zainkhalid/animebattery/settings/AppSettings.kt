@@ -41,7 +41,21 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(PAUSED, false)
         set(v) = prefs.edit().putBoolean(PAUSED, v).apply()
 
+    /** "badge" = sit on the stock battery, "full" = draw our own whole status bar. */
+    var barMode: String
+        get() = prefs.getString(BAR_MODE, MODE_FULL)!!
+        set(v) = prefs.edit().putString(BAR_MODE, v).apply()
+
+    /** Character size in the full bar, 24 to 56 dp. */
+    var characterSizeDp: Float
+        get() = prefs.getFloat(CHARACTER_SIZE, 40f)
+        set(v) = prefs.edit().putFloat(CHARACTER_SIZE, v.coerceIn(24f, 56f)).apply()
+
     companion object {
+        const val BAR_MODE = "bar_mode"
+        const val MODE_BADGE = "badge"
+        const val MODE_FULL = "full"
+        const val CHARACTER_SIZE = "character_size_dp"
         const val CHARACTER = "character"
         const val SHOW_PERCENT = "show_percent"
         const val SIZE = "size"

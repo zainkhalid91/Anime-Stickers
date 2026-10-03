@@ -41,6 +41,8 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
     private lateinit var settings: AppSettings
     private lateinit var reader: StatusBarReader
     private lateinit var badge: BadgeView
+    private lateinit var full: FullBarController
+    private val fullMode get() = settings.barMode == AppSettings.MODE_FULL
     private val handler = Handler(Looper.getMainLooper())
     private val machine = BatteryStateMachine()
     private val params = WindowManager.LayoutParams(
@@ -62,6 +64,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
     }
 
     private var attached = false
+    private var fullAttached = false
     private var screenOn = true
     private var powerSave = false
     private var lastPlugged: Boolean? = null
@@ -77,6 +80,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
                 Intent.ACTION_BATTERY_CHANGED -> onBattery(i)
                 Intent.ACTION_SCREEN_OFF -> { screenOn = false; refresh(measure = false) }
                 Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> { screenOn = true; scheduleMeasure(150) }
+                Intent.ACTION_TIME_TICK, Intent.ACTION_TIME_CHANGED -> full.onClockTick()
                 PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
                     powerSave = getSystemService(PowerManager::class.java).isPowerSaveMode
                     pushState()
@@ -91,6 +95,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
         settings = AppSettings(this)
         reader = StatusBarReader(this)
         badge = BadgeView(this)
+        full = FullBarController(this)
         applySettings()
         settings.prefs.registerOnSharedPreferenceChangeListener(this)
 
@@ -102,6 +107,8 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+            addAction(Intent.ACTION_TIME_TICK)
+            addAction(Intent.ACTION_TIME_CHANGED)
         }
         // Sticky battery broadcast comes back straight away with the current state.
         registerReceiver(receiver, filter)?.let(::onBattery)
@@ -110,6 +117,11 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (fullMode) {
+            // The bar colour follows the app underneath.
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) { full.onScrolled(); return }
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) full.onAppChanged()
+        } else if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) return
         // Hide quickly when the shade comes down; the full re-measure can wait a moment.
         refresh(measure = false)
         scheduleMeasure(150)
@@ -138,6 +150,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
         if (instance !== this) return
         handler.removeCallbacksAndMessages(null)
         detach()
+        full.release()
         runCatching { unregisterReceiver(receiver) }
         settings.prefs.unregisterOnSharedPreferenceChangeListener(this)
         instance = null
@@ -151,6 +164,8 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
     private fun applySettings() {
         badge.art = Characters.byId(settings.characterId)
         badge.showPercent = settings.showPercent
+        full.view.characterId = settings.characterId
+        full.view.sizeDp = settings.characterSizeDp
         pushState()
     }
 
@@ -178,6 +193,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
         val state = machine.update(s)
         badge.animator.animationsEnabled = settings.animations && !powerSave && screenOn && attached
         badge.show(state, s.level)
+        full.show(state, s.level, settings.animations && !powerSave && screenOn)
     }
 
     private fun scheduleMeasure(delayMs: Long) {
@@ -199,8 +215,25 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
         if (!want) {
             if (attached) Log.d(TAG, "hide: screen=$screenOn locked=$locked bar=$bar paused=${settings.paused}")
             detach()
+            full.detach()
+            fullAttached = false
             return
         }
+        if (fullMode) {
+            detach()
+            if (!measure && fullAttached) return
+            // Line our clock and icons up with where the stock ones are.
+            val stock = reader.findStock(w, sbHeight)
+            val d = resources.displayMetrics.density
+            val endPad = stock?.let { (w - it.battery.right).toFloat() } ?: (40.8f * d)
+            val barH = stock?.barHeight ?: sbHeight
+            full.update(true, barH, startPad = endPad, endPad = endPad)
+            fullAttached = true
+            pushState()
+            return
+        }
+        full.detach()
+        fullAttached = false
         if (!measure && attached) return
 
         val stock = reader.findStock(w, sbHeight)

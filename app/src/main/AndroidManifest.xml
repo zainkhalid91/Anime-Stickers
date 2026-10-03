@@ -7,6 +7,9 @@
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Wi-Fi state for our own status bar. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- We read SystemUI's own dimens to find where the stock battery sits. -->
     <queries>
         <package android:name="com.android.systemui" />
