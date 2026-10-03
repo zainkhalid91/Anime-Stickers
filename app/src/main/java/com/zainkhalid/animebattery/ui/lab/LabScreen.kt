@@ -45,6 +45,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.unit.IntSize
+import com.zainkhalid.animebattery.R
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -75,7 +80,9 @@ import kotlin.random.Random
 fun LabScreen(modifier: Modifier = Modifier) {
     var level by rememberSaveable { mutableFloatStateOf(85f) }
     var charging by rememberSaveable { mutableStateOf(false) }
+    var aiArt by rememberSaveable { mutableStateOf(true) }
     val mood = moodFor(level.roundToInt(), charging)
+    val art = if (aiArt) ImageBitmap.imageResource(R.drawable.sticker_naruto_happy) else null
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Tokens.Gap)) {
         Card(
@@ -92,17 +99,24 @@ fun LabScreen(modifier: Modifier = Modifier) {
                     Text("Charging", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     Switch(checked = charging, onCheckedChange = { charging = it })
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("AI sticker art", style = MaterialTheme.typography.bodyLarge)
+                        Text("Off = hand-drawn vector", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = aiArt, onCheckedChange = { aiArt = it })
+                }
             }
         }
 
         SampleTitle("1 · Battery widget", "Home screen widget idea. Liquid fill, big number, the character pops out.")
-        BatteryWidgetSample(level.roundToInt(), charging, mood)
+        BatteryWidgetSample(level.roundToInt(), charging, mood, art)
 
         SampleTitle("2 · Charging screen", "Shows for a few seconds when you plug in.")
-        ChargingSample(level.roundToInt())
+        ChargingSample(level.roundToInt(), art)
 
         SampleTitle("3 · Screen pet", "Walks along the bottom of the screen, naps when the battery is low.")
-        ScreenPetSample(level.roundToInt())
+        ScreenPetSample(level.roundToInt(), art)
 
         SampleTitle("Expressions", "Each battery state gets its own face.")
         MoodStrip()
@@ -154,10 +168,38 @@ private fun DrawScope.sticker(foot: Offset, height: Float, mood: Mood, blink: Bo
     }
 }
 
+/** AI sticker: right hand position as a fraction of the image (for the Rasengan). */
+private val ImageHand = Offset(0.70f, 0.77f)
+
+/**
+ * Draws either the bitmap sticker or the vector one, bottom-centre at [foot].
+ * Returns the hand point in canvas pixels, for effects.
+ */
+private fun DrawScope.anySticker(
+    img: ImageBitmap?, foot: Offset, height: Float, mood: Mood, blink: Boolean, armUp: Boolean, squash: Float = 0f,
+): Offset {
+    if (img == null) {
+        sticker(foot, height, mood, blink, armUp, squash)
+        val k = height / StickerNaruto.H
+        return Offset(foot.x - StickerNaruto.W * k / 2f + StickerNaruto.HandUp.x * k, foot.y - height + StickerNaruto.HandUp.y * k)
+    }
+    val w = height * img.width / img.height
+    withTransform({
+        translate(foot.x - w / 2f, foot.y - height)
+        scale(1f + squash * 0.6f, 1f - squash, Offset(w / 2f, height))
+    }) {
+        drawImage(
+            img, dstSize = IntSize(w.roundToInt(), height.roundToInt()),
+            filterQuality = FilterQuality.High,
+        )
+    }
+    return Offset(foot.x - w / 2f + ImageHand.x * w, foot.y - height + ImageHand.y * height)
+}
+
 // ── 1 · Battery widget ───────────────────────────────────────────────────
 
 @Composable
-private fun BatteryWidgetSample(level: Int, charging: Boolean, mood: Mood) {
+private fun BatteryWidgetSample(level: Int, charging: Boolean, mood: Mood, img: ImageBitmap?) {
     val t = rememberInfiniteTransition(label = "widget")
     val time by t.animateFloat(0f, 1f, infiniteRepeatable(tween(4000, easing = LinearEasing)), label = "time")
     val bob by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bob")
@@ -245,12 +287,8 @@ private fun BatteryWidgetSample(level: Int, charging: Boolean, mood: Mood) {
 
         // The character pops out of the left, bobbing; squash-pop on mood change.
         val foot = Offset(w * 0.2f, h * 0.97f - bob * 4.dp.toPx())
-        sticker(foot, h * 1.0f, mood, blink, armUp = charging, squash = pop.value * 0.18f)
-        if (charging) {
-            val k = h / StickerNaruto.H
-            val hand = Offset(foot.x - StickerNaruto.W * k / 2f + StickerNaruto.HandUp.x * k, foot.y - h + StickerNaruto.HandUp.y * k)
-            StickerNaruto.drawRasengan(this, hand, h * 0.1f, time * 3f, bob)
-        }
+        val hand = anySticker(img, foot, h * 1.0f, mood, blink, armUp = charging, squash = pop.value * 0.18f)
+        if (charging) StickerNaruto.drawRasengan(this, hand, h * 0.1f, time * 3f, bob)
 
         // Sparkles twinkling around.
         val spots = listOf(Offset(0.92f, 0.12f), Offset(0.47f, 0.1f), Offset(0.06f, 0.2f), Offset(0.95f, 0.88f))
@@ -291,7 +329,7 @@ private fun DrawScope.drawHeart(c: Offset, r: Float, color: Color, alpha: Float)
 // ── 2 · Charging screen ──────────────────────────────────────────────────
 
 @Composable
-private fun ChargingSample(level: Int) {
+private fun ChargingSample(level: Int, img: ImageBitmap?) {
     val t = rememberInfiniteTransition(label = "charge")
     val time by t.animateFloat(0f, 1f, infiniteRepeatable(tween(6000, easing = LinearEasing)), label = "time")
     val pulse by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "pulse")
@@ -328,9 +366,7 @@ private fun ChargingSample(level: Int) {
 
         val sh = w * 0.62f
         val foot = Offset(c.x, c.y + sh * 0.5f)
-        sticker(foot, sh, Mood.Charging, blink, armUp = true)
-        val k = sh / StickerNaruto.H
-        val hand = Offset(foot.x - StickerNaruto.W * k / 2f + StickerNaruto.HandUp.x * k, foot.y - sh + StickerNaruto.HandUp.y * k)
+        val hand = anySticker(img, foot, sh, Mood.Charging, blink, armUp = true)
         StickerNaruto.drawRasengan(this, hand, sh * 0.12f + pulse * 2.dp.toPx(), time * 8f, pulse)
 
         val big = text.measure("${shown.roundToInt()}%", TextStyle(fontSize = (w * 0.15f).toSp(), fontWeight = FontWeight.Black, color = Color.White))
@@ -343,7 +379,7 @@ private fun ChargingSample(level: Int) {
 // ── 3 · Screen pet ───────────────────────────────────────────────────────
 
 @Composable
-private fun ScreenPetSample(level: Int) {
+private fun ScreenPetSample(level: Int, img: ImageBitmap?) {
     val t = rememberInfiniteTransition(label = "pet")
     val walk by t.animateFloat(0f, 1f, infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Reverse), label = "walk")
     val step by t.animateFloat(0f, 1f, infiniteRepeatable(tween(420, easing = LinearEasing)), label = "step")
@@ -366,7 +402,7 @@ private fun ScreenPetSample(level: Int) {
             withTransform({ scale(if (facingRight || sleeping) 1f else -1f, 1f, Offset(x, foot.y)) }) {
                 // Lean into the step a little.
                 rotate(if (sleeping) 0f else sin(step * 2 * PI).toFloat() * 4f, foot) {
-                    sticker(foot, sh, if (sleeping) Mood.Sleepy else Mood.Happy, blink && !sleeping, armUp = false)
+                    anySticker(img, foot, sh, if (sleeping) Mood.Sleepy else Mood.Happy, blink && !sleeping, armUp = false)
                 }
             }
             if (sleeping) {
