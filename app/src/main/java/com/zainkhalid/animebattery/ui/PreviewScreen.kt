@@ -133,7 +133,8 @@ private fun PhoneMock(
     charging: Boolean, light: Boolean, zoom: Int, showPercent: Boolean, size: Float,
 ) {
     val density = LocalDensity.current.density
-    val mock = remember(density) { StatusBarMock(density) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val mock = remember(density) { StatusBarMock(context, density) }
     var version by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(state, level) {

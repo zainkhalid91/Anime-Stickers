@@ -30,6 +30,7 @@ class BadgePainter(density: Float) {
         frame: Frame,
         layout: BadgeLayout,
         showPercent: Boolean,
+        sticker: androidx.compose.ui.graphics.ImageBitmap? = null,
     ) {
         if (canvas !== native) {
             native = canvas
@@ -40,7 +41,7 @@ class BadgePainter(density: Float) {
             textFor = art
         }
         scope.draw(density, LayoutDirection.Ltr, wrapped!!, Size(layout.width, layout.height)) {
-            renderer.draw(this, art, frame, layout, showPercent, text)
+            renderer.draw(this, art, frame, layout, showPercent, text, sticker)
         }
     }
 }

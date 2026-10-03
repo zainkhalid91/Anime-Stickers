@@ -10,6 +10,8 @@ import com.zainkhalid.animebattery.characters.CharacterAnimator
 import com.zainkhalid.animebattery.characters.CharacterArt
 import com.zainkhalid.animebattery.characters.Characters
 import com.zainkhalid.animebattery.render.BadgePainter
+import com.zainkhalid.animebattery.render.StickerCache
+import kotlin.math.roundToInt
 
 /**
  * The badge in the status bar. A plain View rather than a ComposeView: it only needs
@@ -61,7 +63,14 @@ class BadgeView(context: Context) : View(context) {
         super.onDetachedFromWindow()
     }
 
+    /** Sticker art instead of the vector figure, when the character has it. */
+    var useSticker = true
+        set(v) { field = v; invalidate() }
+
     override fun onDraw(canvas: Canvas) {
-        painter.paint(canvas, art, animator.frame, layout, showPercent)
+        val sticker = if (useSticker) {
+            StickerCache.get(context, art.id, (BadgeLayout.ART_HEIGHT * layout.unit).roundToInt())
+        } else null
+        painter.paint(canvas, art, animator.frame, layout, showPercent, sticker)
     }
 }

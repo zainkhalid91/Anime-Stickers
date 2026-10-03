@@ -4,7 +4,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import com.zainkhalid.animebattery.battery.BatteryState
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -53,6 +57,7 @@ class BadgeRenderer {
         layout: BadgeLayout,
         showPercent: Boolean = true,
         text: TextDrawer? = null,
+        sticker: ImageBitmap? = null,
     ) = with(scope) {
         val g = art.gauge
         val l = layout
@@ -101,6 +106,10 @@ class BadgeRenderer {
         val s = if (p < 1f) sin(PI * p).toFloat() else 0f
         val sx = 1f + 0.10f * s
         val sy = 1f - 0.14f * s
+        if (sticker != null) {
+            drawSticker(sticker, l, f, sx, sy)
+            return@with
+        }
         withTransform({
             translate(l.figureLeft, l.figureTop + f.bob * l.unit)
             scale(l.unit, l.unit, Offset.Zero)
@@ -108,5 +117,55 @@ class BadgeRenderer {
         }) {
             art.drawFigure(this, f)
         }
+    }
+
+    private var orbStroke = Stroke(1f)
+    private var orbStrokeWidth = -1f
+
+    /**
+     * Sticker art instead of the vector figure. The bitmap must already be the exact
+     * height to draw (see the app's sticker cache), so it's drawn 1:1 and stays sharp.
+     * Feet sit where the vector figure's feet would be.
+     */
+    private fun DrawScope.drawSticker(img: ImageBitmap, l: BadgeLayout, f: Frame, sx: Float, sy: Float) {
+        val h = img.height.toFloat()
+        val w = img.width.toFloat()
+        val feetX = l.figureLeft + BadgeLayout.ART_WIDTH * l.unit / 2f
+        val feetY = l.figureTop + BadgeLayout.ART_HEIGHT * l.unit + f.bob * l.unit
+        val left = kotlin.math.round(feetX - w / 2f)
+        val top = kotlin.math.round(feetY - h)
+        withTransform({ scale(sx, sy, Offset(feetX, feetY)) }) {
+            drawImage(img, Offset(left, top))
+        }
+        if (f.look == BatteryState.Charging) {
+            // A small spinning orb at the right hand, one step per charge frame.
+            val c = Offset(left + w * HAND_X, top + h * HAND_Y)
+            val r = h * 0.13f
+            val sw = r * 0.22f
+            if (sw != orbStrokeWidth) {
+                orbStrokeWidth = sw
+                orbStroke = Stroke(sw, cap = StrokeCap.Round)
+            }
+            drawCircle(ORB_GLOW, r * 1.7f, c)
+            drawCircle(ORB, r, c)
+            drawCircle(Color.White, r * 0.45f, c)
+            drawArc(
+                Color.White, f.chargeFrame * 36f, 120f, false,
+                Offset(c.x - r * 0.72f, c.y - r * 0.72f), Size(r * 1.44f, r * 1.44f), style = orbStroke,
+            )
+            drawArc(
+                ORB_RING, f.chargeFrame * 36f + 180f, 120f, false,
+                Offset(c.x - r * 0.72f, c.y - r * 0.72f), Size(r * 1.44f, r * 1.44f), style = orbStroke,
+            )
+        }
+    }
+
+    private companion object {
+        /** Right hand position in the sticker, as a fraction of its size. */
+        const val HAND_X = 0.70f
+        const val HAND_Y = 0.77f
+        val ORB = Color(0xFF8FD8FF)
+        val ORB_GLOW = Color(0x553A9BFF)
+        val ORB_RING = Color(0xFF2C8BE6)
     }
 }

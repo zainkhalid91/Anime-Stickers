@@ -16,7 +16,7 @@ import com.zainkhalid.animebattery.characters.Frame
  * Android 17 battery pill, then our badge on top, exactly as the overlay places it.
  * Geometry comes from the Pixel 8 Pro measurements in docs/PHASE0.md, in dp.
  */
-class StatusBarMock(private val density: Float) {
+class StatusBarMock(private val context: android.content.Context, private val density: Float) {
 
     private val painter = BadgePainter(density)
     val layout = BadgeLayout()
@@ -97,7 +97,8 @@ class StatusBarMock(private val density: Float) {
         )
         c.save()
         c.translate(layout.windowLeft.toFloat(), 0f)
-        painter.paint(c, art, frame, layout, showPercent)
+        val sticker = StickerCache.get(context, art.id, kotlin.math.round(BadgeLayout.ART_HEIGHT * layout.unit).toInt())
+        painter.paint(c, art, frame, layout, showPercent, sticker)
         c.restore()
     }
 }

@@ -54,8 +54,8 @@ object ArtSheet {
                 this.chargeFrame = chargeFrame
             }
             val charging = state == BatteryState.Charging || state == BatteryState.Charged
-            val dark = crop(painter, art, f, d, cropW, sbH, DARK, Color.WHITE, charging)
-            val light = crop(painter, art, f, d, cropW, sbH, LIGHT, Color.rgb(30, 30, 34), charging)
+            val dark = crop(painter, art, f, d, cropW, sbH, DARK, Color.WHITE, charging, context)
+            val light = crop(painter, art, f, d, cropW, sbH, LIGHT, Color.rgb(30, 30, 34), charging, context)
             val zoom = Bitmap.createScaledBitmap(dark, cropW * ZOOM, sbH * ZOOM, false)
 
             val y = (row * rowH).toFloat()
@@ -75,6 +75,7 @@ object ArtSheet {
     fun crop(
         painter: BadgePainter, art: CharacterArt, f: Frame, d: Float,
         w: Int, h: Int, bg: Int, ink: Int, charging: Boolean,
+        context: Context? = null,
     ): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
@@ -100,7 +101,8 @@ object ArtSheet {
         )
         c.save()
         c.translate(layout.windowLeft.toFloat(), layout.windowTop.toFloat())
-        painter.paint(c, art, f, layout, showPercent = true)
+        val sticker = context?.let { StickerCache.get(it, art.id, kotlin.math.round(BadgeLayout.ART_HEIGHT * layout.unit).toInt()) }
+        painter.paint(c, art, f, layout, showPercent = true, sticker = sticker)
         c.restore()
         return bmp
     }
