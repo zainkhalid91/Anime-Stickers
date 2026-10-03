@@ -125,7 +125,16 @@ class CharacterAnimator(seed: Long = 7L) {
         val settling = frame.transition < 1f || frame.level != targetLevel
         if (settling) return FRAME_MS.toLong()
         if (!animationsEnabled || frame.look == BatteryState.PowerSaver) return -1
-        return FRAME_MS.toLong()
+        // Charging loop and the critical pulse need the full 12 fps.
+        if (frame.look == BatteryState.Charging || frame.look == BatteryState.Critical) return FRAME_MS.toLong()
+        // Idle: only the 1px bob and the blink move. Check 4 times a second, and wake
+        // exactly when a blink starts or ends.
+        val now = startMs + frame.timeMs
+        val untilBlink = when {
+            frame.blink -> nextBlinkMs + BLINK_MS - now
+            else -> nextBlinkMs - now
+        }
+        return untilBlink.coerceIn(1L, IDLE_TICK_MS)
     }
 
     private fun nextBlinkGap() = random.nextLong(3000, 6001)
@@ -139,5 +148,6 @@ class CharacterAnimator(seed: Long = 7L) {
         const val PULSE_PERIOD_MS = 2000L
         const val PULSE_MS = 700f
         const val LEVEL_PER_MS = 0.08f
+        const val IDLE_TICK_MS = 250L
     }
 }
