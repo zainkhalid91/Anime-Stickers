@@ -2,6 +2,11 @@ package com.zainkhalid.animebattery
 
 import android.content.Intent
 import android.os.Bundle
+import com.zainkhalid.animebattery.settings.AppSettings
+import com.zainkhalid.animebattery.ui.PreviewScreen
+import com.zainkhalid.animebattery.ui.AnimeBatteryTheme
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -23,7 +28,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.zainkhalid.animebattery.characters.Characters
 import com.zainkhalid.animebattery.overlay.StatusOverlayService
+import com.zainkhalid.animebattery.render.ArtSheet
 import com.zainkhalid.animebattery.system.StockIconController
 
 /**
@@ -39,8 +46,20 @@ class MainActivity : ComponentActivity() {
         stock = StockIconController(this)
         handle(intent)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                Surface(Modifier.fillMaxSize()) { SpikeScreen() }
+            AnimeBatteryTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Column(
+                        Modifier.verticalScroll(rememberScrollState()).padding(16.dp).padding(top = 40.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Text("Anime Battery", style = MaterialTheme.typography.displaySmall)
+                        Text("Naruto Uzumaki · Naruto (fan art)", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        PreviewScreen(Characters.byId(AppSettings(this@MainActivity).characterId), showPercent = true, size = 1f)
+                        Button(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
+                            Text("Accessibility settings")
+                        }
+                    }
+                }
             }
         }
     }
@@ -51,40 +70,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
-        intent?.getStringExtra("cmd")?.let(::command)
+        intent?.getStringExtra("cmd")?.let { command(it, intent) }
     }
 
-    private fun command(cmd: String) {
+    private fun command(cmd: String, intent: Intent? = null) {
         when (cmd) {
             "hide_icon" -> Log.i("AnimeBattery", "hide -> ${stock.hide()}")
             "restore_icon" -> Log.i("AnimeBattery", "restore -> ${stock.restore()}")
-            else -> StatusOverlayService.instance?.run(cmd)
+            "sheet" -> Characters.all.forEach { Log.i("AnimeBattery", "sheet -> ${ArtSheet.render(this, it)}") }
+            else -> StatusOverlayService.instance?.run(cmd, intent ?: Intent())
                 ?: Log.w("AnimeBattery", "service not running, can't run $cmd")
-        }
-    }
-
-    @Composable
-    private fun SpikeScreen() {
-        // Bumped after each action so the status lines re-read.
-        var tick by remember { mutableIntStateOf(0) }
-        fun act(cmd: String) { command(cmd); tick++ }
-        Column(
-            Modifier.padding(24.dp).padding(top = 48.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Anime Battery · Phase 0 spike", style = MaterialTheme.typography.titleLarge)
-            key(tick) {
-                Text("WRITE_SECURE_SETTINGS: ${stock.canWrite()}")
-                Text("Overlay service running: ${StatusOverlayService.instance != null}")
-                Text("icon_blacklist: ${stock.current()}")
-            }
-            Button(onClick = { act("measure") }) { Text("1. Measure stock battery (icon visible)") }
-            Button(onClick = { act("hide_icon") }) { Text("2. Hide stock battery") }
-            Button(onClick = { act("restore_icon") }) { Text("Restore stock battery") }
-            Button(onClick = { act("dump") }) { Text("Dump windows + status bar to logcat") }
-            Button(onClick = {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }) { Text("Open Accessibility settings") }
         }
     }
 }

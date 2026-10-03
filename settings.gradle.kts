@@ -20,4 +20,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "AnimeBattery"
-include(":app")
+include(":app", ":characters", ":battery")
