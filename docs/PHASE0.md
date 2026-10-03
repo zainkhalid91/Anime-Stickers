@@ -24,9 +24,38 @@ On Android 17 the battery (the new pill with the percentage inside) is drawn by
 that reads icon_blacklist. So the blacklist mechanism still works for other
 icons, but it can no longer hide the battery. Per the brief, I stopped here.
 
-Steps 2 (accessibility overlay) and 3 (battery broadcast) are coded in the spike
-but not run on the phone yet. The overlay service needs to be switched on by
-hand in Accessibility settings.
+## 2. Accessibility overlay above the status bar: works
+
+TYPE_ACCESSIBILITY_OVERLAY draws above the status bar. The status bar is now a
+Compose view, and its accessibility tree gives the stock battery's exact bounds:
+
+```
+system_icons  Rect(787, 45 - 930, 70)
+  statusIcons Rect(787, 46 - 861, 69)   cellular + wifi
+  battery     Rect(872, 45 - 930, 70)   "Battery charging, 53 percent." (pill 872-918 + bolt)
+```
+
+| Check | Result |
+| --- | --- |
+| Portrait, red square on measured bounds | Pixel exact ([phase0_square_portrait.png](phase0_square_portrait.png)) |
+| Landscape | Pixel exact at Rect(2108, 15 - 2166, 40) ([phase0_square_landscape.png](phase0_square_landscape.png)) |
+| Guess from SystemUI dimens instead of measuring | Wrong (933-1000 vs 872-930). Measure, don't guess. |
+| Shade pulled down | Square lands on the Wi-Fi icon in the shade header, so we must hide ([phase0_square_shade.png](phase0_square_shade.png)) |
+| Light status bar | Not done yet: Chrome is in dark theme on this phone. Redo with a light app in Phase 1. |
+
+Shade detection: with the shade down, the 113 px SystemUI status bar window disappears
+and SystemUI shows one full-screen TYPE_SYSTEM window (0,0-1008,2244). That is the signal.
+
+Bugs found:
+- Measuring right after a rotation read the old (portrait) bounds, because the node tree
+  wasn't updated yet. Fix: measure after the status bar window bounds match the new rotation.
+- Switching the service on also turned on its floating accessibility shortcut button
+  (accessibility_button_targets). Onboarding has to tell people to turn the shortcut off.
+
+## 3. Battery state: works
+
+The sticky ACTION_BATTERY_CHANGED gives level, status, plugged and temperature right away:
+`level=52 status=2 plugged=1 temp=35.8 saver=false`, and updates arrive as it charges.
 
 ## Build notes
 
