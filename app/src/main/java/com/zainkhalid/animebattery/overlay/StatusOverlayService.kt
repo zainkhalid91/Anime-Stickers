@@ -166,6 +166,14 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
         badge.showPercent = settings.showPercent
         full.view.characterId = settings.characterId
         full.view.sizeDp = settings.characterSizeDp
+        full.view.spot = when (settings.characterSpot) {
+            AppSettings.SPOT_LEAN -> FullBarView.Spot.IslandLean
+            AppSettings.SPOT_PEEK -> FullBarView.Spot.IslandPeek
+            else -> FullBarView.Spot.Battery
+        }
+        full.view.islandOn = settings.islandOn
+        full.view.islandWidthDp = settings.islandWidthDp
+        full.view.sparkles = settings.sparkles
         pushState()
     }
 

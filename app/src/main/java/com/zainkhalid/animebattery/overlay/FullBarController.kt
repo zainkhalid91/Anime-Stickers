@@ -73,6 +73,11 @@ class FullBarController(private val service: AccessibilityService) {
         view.barHeight = barHeight
         view.startPad = startPad
         view.endPad = endPad
+        // Camera hole, for the island.
+        val cut = if (Build.VERSION.SDK_INT >= 30) {
+            wm.currentWindowMetrics.windowInsets.displayCutout?.boundingRectTop
+        } else null
+        if (cut != null && !cut.isEmpty) view.cutout.set(cut) else view.cutout.setEmpty()
         params.x = 0
         params.y = 0
         params.height = view.neededHeight()
@@ -98,8 +103,9 @@ class FullBarController(private val service: AccessibilityService) {
     }
 
     fun onAppChanged() = scheduleSample(250)
-    fun onScrolled() = scheduleSample(350)
-    fun onClockTick() = view.invalidate()
+    /** Re-sample once scrolling has settled, not during it. */
+    fun onScrolled() = scheduleSample(600)
+    fun onClockTick() = view.updateClock()
 
     fun release() {
         detach()
@@ -177,6 +183,6 @@ class FullBarController(private val service: AccessibilityService) {
     private fun Context.mainThreadHandler() = android.os.Handler(mainLooper)
 
     companion object {
-        private const val MIN_GAP_MS = 650L
+        private const val MIN_GAP_MS = 1000L
     }
 }

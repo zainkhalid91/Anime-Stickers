@@ -2,7 +2,10 @@ package com.zainkhalid.animebattery
 
 import android.content.Intent
 import android.os.Bundle
-import com.zainkhalid.animebattery.ui.LiveBarCard
+import com.zainkhalid.animebattery.ui.HomeScreen
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.TextButton
+import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.safeDrawing
@@ -62,18 +65,19 @@ class MainActivity : ComponentActivity() {
                         Modifier.windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Text("Anime Battery", style = MaterialTheme.typography.displaySmall)
-                        Text("Naruto Uzumaki · Naruto (fan art)", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        LiveBarCard()
-                        var tab by rememberSaveable { mutableIntStateOf(0) }
-                        PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
-                            Tab(tab == 0, { tab = 0 }, text = { Text("Samples") })
-                            Tab(tab == 1, { tab = 1 }, text = { Text("Status bar") })
-                        }
-                        if (tab == 0) LabScreen()
-                        else PreviewScreen(Characters.byId(AppSettings(this@MainActivity).characterId), showPercent = true, size = 1f)
-                        Button(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
-                            Text("Accessibility settings")
+                        var explore by rememberSaveable { mutableStateOf(false) }
+                        BackHandler(enabled = explore) { explore = false }
+                        if (!explore) {
+                            HomeScreen(onOpenSamples = { explore = true })
+                        } else {
+                            TextButton(onClick = { explore = false }) { Text("‹ Back") }
+                            var tab by rememberSaveable { mutableIntStateOf(0) }
+                            PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
+                                Tab(tab == 0, { tab = 0 }, text = { Text("Ideas") })
+                                Tab(tab == 1, { tab = 1 }, text = { Text("Badge preview") })
+                            }
+                            if (tab == 0) LabScreen()
+                            else PreviewScreen(Characters.byId(AppSettings(this@MainActivity).characterId), showPercent = true, size = 1f)
                         }
                     }
                 }

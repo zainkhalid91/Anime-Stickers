@@ -51,7 +51,32 @@ class AppSettings(context: Context) {
         get() = prefs.getFloat(CHARACTER_SIZE, 40f)
         set(v) = prefs.edit().putFloat(CHARACTER_SIZE, v.coerceIn(24f, 56f)).apply()
 
+    /** Where the character lives in the full bar: "battery", "lean" or "peek". */
+    var characterSpot: String
+        get() = prefs.getString(SPOT, SPOT_BATTERY)!!
+        set(v) = prefs.edit().putString(SPOT, v).apply()
+
+    var islandOn: Boolean
+        get() = prefs.getBoolean(ISLAND, true)
+        set(v) = prefs.edit().putBoolean(ISLAND, v).apply()
+
+    /** 64 to 180 dp. */
+    var islandWidthDp: Float
+        get() = prefs.getFloat(ISLAND_WIDTH, 104f)
+        set(v) = prefs.edit().putFloat(ISLAND_WIDTH, v.coerceIn(64f, 180f)).apply()
+
+    var sparkles: Boolean
+        get() = prefs.getBoolean(SPARKLES, true)
+        set(v) = prefs.edit().putBoolean(SPARKLES, v).apply()
+
     companion object {
+        const val SPOT = "character_spot"
+        const val SPOT_BATTERY = "battery"
+        const val SPOT_LEAN = "lean"
+        const val SPOT_PEEK = "peek"
+        const val ISLAND = "island"
+        const val ISLAND_WIDTH = "island_width_dp"
+        const val SPARKLES = "sparkles"
         const val BAR_MODE = "bar_mode"
         const val MODE_BADGE = "badge"
         const val MODE_FULL = "full"
