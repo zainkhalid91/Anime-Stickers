@@ -2,6 +2,10 @@ package com.zainkhalid.animebattery
 
 import android.content.Intent
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.WindowInsets
 import com.zainkhalid.animebattery.ui.lab.LabScreen
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.Tab
@@ -46,6 +50,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var stock: StockIconController
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         stock = StockIconController(this)
         handle(intent)
@@ -53,7 +58,7 @@ class MainActivity : ComponentActivity() {
             AnimeBatteryTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Column(
-                        Modifier.verticalScroll(rememberScrollState()).padding(16.dp).padding(top = 40.dp),
+                        Modifier.windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         Text("Anime Battery", style = MaterialTheme.typography.displaySmall)
