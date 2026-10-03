@@ -51,6 +51,15 @@ class Part(val vector: ImageVector) {
         }
     }
 
+    /** Draws just the outline of every shape with [brush], used for sticker borders and shadows. */
+    fun drawSilhouette(scope: DrawScope, brush: Brush, style: Stroke, fill: Boolean, alpha: Float = 1f) {
+        for (s in shapes) {
+            if (s.fill == null) continue
+            if (fill) scope.drawPath(s.path, brush, alpha = alpha)
+            scope.drawPath(s.path, brush, alpha = alpha, style = style)
+        }
+    }
+
     /** Draws in viewport units; the caller sets up the transform. */
     fun draw(scope: DrawScope, alpha: Float = 1f) {
         if (alpha <= 0f) return
@@ -80,13 +89,24 @@ class PartBuilder(private val builder: ImageVector.Builder) {
         alpha: Float = 1f,
         cap: StrokeCap = StrokeCap.Round,
         join: StrokeJoin = StrokeJoin.Round,
+    ) = shape(d, fill?.let(::SolidColor), stroke?.let(::SolidColor), width, alpha, cap, join)
+
+    /** Same, with any brush (gradients use viewport coordinates). */
+    fun shape(
+        d: String,
+        fill: Brush?,
+        stroke: Brush?,
+        width: Float = 0f,
+        alpha: Float = 1f,
+        cap: StrokeCap = StrokeCap.Round,
+        join: StrokeJoin = StrokeJoin.Round,
     ) {
         builder.addPath(
             // Fresh parser per shape: toNodes() can hand back the parser's own list.
             pathData = PathParser().parsePathString(d).toNodes().toList(),
-            fill = fill?.let(::SolidColor),
+            fill = fill,
             fillAlpha = alpha,
-            stroke = stroke?.let(::SolidColor),
+            stroke = stroke,
             strokeAlpha = alpha,
             strokeLineWidth = width,
             strokeLineCap = cap,
@@ -96,7 +116,7 @@ class PartBuilder(private val builder: ImageVector.Builder) {
 
     /** Outline-only line work (whiskers, closed eyes, smiles). */
     fun line(d: String, color: Color, width: Float, alpha: Float = 1f) =
-        shape(d, fill = null, stroke = color, width = width, alpha = alpha)
+        shape(d, fill = null as Brush?, stroke = SolidColor(color), width = width, alpha = alpha)
 }
 
 fun part(width: Float, height: Float, name: String = "part", block: PartBuilder.() -> Unit): Part {

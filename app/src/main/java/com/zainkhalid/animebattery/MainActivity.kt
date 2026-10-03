@@ -2,6 +2,10 @@ package com.zainkhalid.animebattery
 
 import android.content.Intent
 import android.os.Bundle
+import com.zainkhalid.animebattery.ui.lab.LabScreen
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.Tab
+import androidx.compose.material3.PrimaryTabRow
 import com.zainkhalid.animebattery.settings.AppSettings
 import com.zainkhalid.animebattery.ui.PreviewScreen
 import com.zainkhalid.animebattery.ui.AnimeBatteryTheme
@@ -54,7 +58,13 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text("Anime Battery", style = MaterialTheme.typography.displaySmall)
                         Text("Naruto Uzumaki · Naruto (fan art)", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        PreviewScreen(Characters.byId(AppSettings(this@MainActivity).characterId), showPercent = true, size = 1f)
+                        var tab by rememberSaveable { mutableIntStateOf(0) }
+                        PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
+                            Tab(tab == 0, { tab = 0 }, text = { Text("Samples") })
+                            Tab(tab == 1, { tab = 1 }, text = { Text("Status bar") })
+                        }
+                        if (tab == 0) LabScreen()
+                        else PreviewScreen(Characters.byId(AppSettings(this@MainActivity).characterId), showPercent = true, size = 1f)
                         Button(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
                             Text("Accessibility settings")
                         }
