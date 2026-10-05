@@ -49,6 +49,11 @@ LOOKS = {
     "sleep": "sleeping, closed eyes, sitting, hugging knees, drooling, peaceful",
     "cheer": "jumping, arms up, cheering, closed eyes, open mouth, happy, ^_^",
     "hurt": "crying, tears, >_<, hands on own head, comical pain, wavy mouth, standing",
+    # One look per battery mood, so the slider shows a different pose at every level.
+    "meh": "bored, half-closed eyes, sigh, slouching, deadpan, unimpressed, standing, arms down",
+    "tired": "exhausted, very tired, sweat, sweatdrop, droopy eyes, slumped, panting, low energy, kneeling",
+    "hot": "sweating, flushed, red face, fanning self, holding hand fan, tongue out, heat, steam, melting",
+    "power": "determined, fist pump, clenched fist, confident grin, powering up, glowing aura, energy, standing",
 }
 
 

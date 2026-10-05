@@ -43,10 +43,13 @@ object StickerCache {
         return File(dir, "${look.key}.png").takeIf { it.exists() } ?: File(dir, "idle.png").takeIf { it.exists() }
     }
 
-    /** True if [look] has its own art (not just the idle fallback). */
-    fun hasOwn(context: Context, characterId: String, look: Look): Boolean =
+    private val own = HashMap<String, Boolean>()
+
+    /** True if [look] has its own art (not just the idle fallback). Cached; cheap per frame. */
+    fun hasOwn(context: Context, characterId: String, look: Look): Boolean = own.getOrPut("$characterId/${look.key}") {
         File(context.filesDir, "cast/$characterId/${look.key}.png").exists() ||
             res(context, characterId, look).let { it != 0 && (look == Look.Idle || it != res(context, characterId, Look.Idle)) }
+    }
 
     fun get(context: Context, characterId: String, heightPx: Int): ImageBitmap? = get(context, characterId, Look.Idle, heightPx)
 
@@ -77,5 +80,6 @@ object StickerCache {
     fun forget(characterId: String) {
         cache.keys.removeAll { it.startsWith("$characterId/") }
         resIds.keys.removeAll { it.startsWith("$characterId/") }
+        own.keys.removeAll { it.startsWith("$characterId/") }
     }
 }

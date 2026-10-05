@@ -305,7 +305,6 @@ Goal: reasons to come back that feel good, never guilty.
 
 #### 4.1b Per-character touches (2026-10-05)
 - **Charging props:** Naruto Rasengan, Luffy meat, Gojo Hollow Purple, Anya peanut, Kotoha a turning orange spark; characters you make get none (`decor/ChargePainter.kt`, `CastMember.charge`).
-- **Luffy is rubber:** pulling keeps the rope still and stretches two long rubber arms down to his body while his legs stretch in the art (`CastMember.rubber`).
 - **Threads:** forked to both fists only when the art has two raised fists; otherwise one thread tied to the highest point of the art.
 - **Smoothness:** pose swaps crossfade (220 ms), the attach point and mood lean ease, sway runs at 25 fps.
 - **Master switch** on Buddy and a **Quick Settings tile** (hide everything instantly); **battery test** slider with Charging / Hot / Power saver that drives the real status bar for up to 10 minutes.

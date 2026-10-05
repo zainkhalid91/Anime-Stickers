@@ -25,7 +25,7 @@ EXTRA = {
     "claude/cheer": ["--peel-white", "--strip-lines"],  # drawn on a white circle over mint
 }
 
-LOOKS = ["idle", "hang", "grabbed", "dizzy", "sleep", "cheer", "hurt"]
+LOOKS = ["idle", "hang", "grabbed", "dizzy", "sleep", "cheer", "hurt", "meh", "tired", "hot", "power"]
 
 
 def picks() -> dict:

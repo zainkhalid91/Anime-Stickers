@@ -12,6 +12,10 @@ enum class Look(val key: String) {
     Sleep("sleep"),
     Cheer("cheer"),
     Hurt("hurt"),
+    Meh("meh"),
+    Tired("tired"),
+    Hot("hot"),
+    Power("power"),
 }
 
 /** Things that happen to the character, each with its own lines. */
@@ -29,19 +33,21 @@ data class CastMember(
     val accent: Long,
     val moods: Map<Mood, List<String>>,
     val events: Map<Event, List<String>>,
-    /** Made of rubber: pulling stretches the arms and legs instead of the rope. */
-    val rubber: Boolean = false,
     /** What they hold while charging. */
     val charge: ChargeFx = ChargeFx.None,
 )
 
-/** Which look fits a battery mood when nothing else is going on. */
+/** Which look fits a battery mood: every mood has its own pose. */
 fun Mood.look(hanging: Boolean): Look = when (this) {
-    Mood.Sleeping -> Look.Sleep
+    Mood.Hyped, Mood.FullPower -> Look.Cheer
+    Mood.Chill -> if (hanging) Look.Hang else Look.Idle
+    Mood.Meh -> Look.Meh
+    Mood.Tired -> Look.Tired
     Mood.Fainting -> Look.Dizzy
-    Mood.FullPower, Mood.Hyped -> Look.Cheer
+    Mood.PoweringUp -> Look.Power
+    Mood.Sleeping -> Look.Sleep
+    Mood.Overheating -> Look.Hot
     Mood.Hurt -> Look.Hurt
-    else -> if (hanging) Look.Hang else Look.Idle
 }
 
 /** The five characters (personal build, so any series). */
@@ -95,7 +101,6 @@ object Cast {
             Event.Peek to listOf("found me!", "i'm back! got meat?"),
             Event.Hurt to listOf("ow! even rubber felt that", "that camera's harder than garp's fist", "OUCH, haha"),
         ),
-        rubber = true,
         charge = ChargeFx.Meat,
     )
 

@@ -168,14 +168,14 @@ class FullBarView(context: Context) : View(context) {
 
     private fun standingTop(): Float = ((barHeight - sizePx) / 2f).coerceAtLeast(2f * d)
 
-    /** Thread length for the hanging pose: longer as the battery runs down. */
-    private fun threadLength(): Float = sizePx * 0.25f + sizePx * 0.9f * (100 - level) / 100f
+    /** Thread length for the hanging pose. Fixed: the battery shows in the pose, not the rope. */
+    private fun threadLength(): Float = sizePx * 0.55f
 
     /** Total window height: the bar plus anything hanging below it, and the bubble while it shows. */
     fun neededHeight(): Int {
         cameraRect(rect)
         var bottom = when (layout.pose) {
-            Pose.Hanging -> rect.bottom + sizePx * 1.15f + sizePx * 0.25f + sizePx * 0.9f
+            Pose.Hanging -> rect.bottom + threadLength() + sizePx * 1.3f
             Pose.Eyes -> barHeight.toFloat()
             else -> standingTop() + sizePx + 4f * d
         }
@@ -599,11 +599,13 @@ class FullBarView(context: Context) : View(context) {
     /** Which pose art fits right now: a reaction, being held, or the battery mood. */
     private fun currentLook(): Look = when {
         reaction == Mood.Hurt -> Look.Hurt
-        // Rubber characters keep holding on while they stretch.
-        hang.dragging -> if (rubber()) Look.Hang else Look.Grabbed
+        hang.dragging -> Look.Grabbed
         reaction == Mood.Fainting -> Look.Dizzy
         reaction == Mood.Hyped -> Look.Cheer
-        else -> mood.look(hanging = layout.pose == Pose.Hanging)
+        else -> mood.look(hanging = layout.pose == Pose.Hanging).let {
+            // No art for that mood yet: keep holding the rope rather than standing on air.
+            if (layout.pose == Pose.Hanging && it != Look.Hang && !StickerCache.hasOwn(context, characterId, it)) Look.Hang else it
+        }
     }
 
     // The sticker for the current size and look, kept so a frame doesn't even build a cache key.
@@ -638,10 +640,7 @@ class FullBarView(context: Context) : View(context) {
         val deg = sway - Math.toDegrees(hang.theta.toDouble()).toFloat()
         val px = cam.centerX()
         val py = cam.bottom - cam.height() * 0.2f
-        // A rubber character keeps the rope at rest and stretches its body instead.
-        val stretchBody = rubber() && hang.stretch > 0f
-        val len = if (stretchBody) hang.restLength else hang.length
-        rubberExtra = if (stretchBody) hang.stretch else 0f
+        val len = hang.length
         c.save()
         c.rotate(deg, px, py)
         thread.color = if (luminance(bg) > 0.55f) 0xAA333333.toInt() else 0xCCFFFFFF.toInt()
@@ -673,28 +672,7 @@ class FullBarView(context: Context) : View(context) {
         val left = px - sw * attachNow
         forkNow = if (grips) (if (dropTarget > dropFrom) k else 1f) else (if (dropTarget < dropFrom) 1f - k else 0f)
         val knot = py + len
-        // Rubber: the body drops by most of the stretch, hanging from two long arms.
-        val armDrop = rubberExtra * 0.65f
-        val top = knot + sizePx * dropNow + armDrop
-        if (armDrop > 0f) {
-            findGrips(sticker)
-            val w = sizePx * 0.075f
-            armInk.strokeWidth = w + 2.4f * d
-            armSkin.strokeWidth = w
-            val lx = left + rawLx
-            val ly = top + rawLy + sizePx * 0.06f
-            val rx = left + rawRx
-            val ry = top + rawRy + sizePx * 0.06f
-            // Ink outline first, then the skin over it, from the fists on the rope down to the body.
-            c.drawLine(px, knot, lx, ly, armInk)
-            c.drawLine(px, knot, rx, ry, armInk)
-            c.drawLine(px, knot, lx, ly, armSkin)
-            c.drawLine(px, knot, rx, ry, armSkin)
-            // The fists stay up on the rope.
-            armSkin.style = Paint.Style.FILL
-            c.drawCircle(px, knot + w * 0.4f, w * 0.95f, armSkin)
-            armSkin.style = Paint.Style.STROKE
-        }
+        val top = knot + sizePx * dropNow
         if (grips && forkNow > 0f) {
             val a = thread.alpha
             thread.alpha = (a * forkNow).toInt()
@@ -706,7 +684,6 @@ class FullBarView(context: Context) : View(context) {
         drawCharacter(c, sticker, left, top)
         gripped = false
         c.restore()
-        rubberExtra = 0f
         val rad = Math.toRadians(-deg.toDouble())
         charX = px + (sin(rad) * len).toFloat()
     }
@@ -720,15 +697,6 @@ class FullBarView(context: Context) : View(context) {
     private var gripRy = 0f
     /** Drawing a gripping sticker: the rope holds it upright, so no mood lean. */
     private var gripped = false
-    /** Top of whatever is between the fists (the head), for the rubber arm band. */
-    private var gripMidY = 0f
-    /** Highest points left and right, fists or not: where rubber arms reach down to. */
-    private var rawLx = 0f
-    private var rawLy = 0f
-    private var rawRx = 0f
-    private var rawRy = 0f
-    private val armInk = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = 0xFF0D0A14.toInt() }
-    private val armSkin = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = RUBBER_SKIN }
     /** x of the highest point of the art (where a single thread ties on), as a fraction. */
     private var topU = 0.5f
     private var topUOf: Bitmap? = null
@@ -772,20 +740,15 @@ class FullBarView(context: Context) : View(context) {
         now - swapStartMs < SWAP_MS || now - dropStartMs < SWAP_MS ||
             abs(tiltNow - ((reaction ?: mood).tiltDeg)) > 0.2f
 
-    /** How much the body is stretching (rubber characters) this frame, px. */
-    private var rubberExtra = 0f
-    private var rubberOf: String? = null
-    private var isRubber = false
+    private var chargeOf: String? = null
 
-    /** Rubber characters (Luffy) stretch their limbs instead of the rope. */
-    private fun rubber(): Boolean {
-        if (rubberOf != characterId) {
-            rubberOf = characterId
-            isRubber = Cast.find(characterId)?.rubber == true
+    /** The current character's charging prop. */
+    private fun chargeProp(): ChargeFx {
+        if (chargeOf != characterId) {
+            chargeOf = characterId
             chargeFx = Cast.find(characterId)?.charge ?: ChargeFx.None
-            hang.maxStretch = if (isRubber) 6f else 3.5f
         }
-        return isRubber
+        return chargeFx
     }
 
     /**
@@ -809,12 +772,10 @@ class FullBarView(context: Context) : View(context) {
         val m = highest((w * 0.38f).toInt(), (w * 0.62f).toInt())
         val r = highest((w * 0.62f).toInt(), w)
         val slack = h * GRIP_SLACK
-        if (l != null && r != null) { rawLx = l.first; rawLy = l.second; rawRx = r.first; rawRy = r.second }
         gripsOk = l != null && r != null && (m == null || (l.second <= m.second + slack && r.second <= m.second + slack))
         if (gripsOk) {
             gripLx = l!!.first; gripLy = l.second
             gripRx = r!!.first; gripRy = r.second
-            gripMidY = m?.second ?: (h * 0.25f)
         }
         return gripsOk
     }
@@ -867,20 +828,8 @@ class FullBarView(context: Context) : View(context) {
         mesh.alpha = if (old != null && fade < 1f) (255 * fade).toInt() else 255
         bmpPaint.alpha = mesh.alpha
         c.scale(1f + 0.10f * squash, 1f - 0.14f * squash, left + sw / 2f, top + s)
-        val stretch = if (layout.pose == Pose.Hanging && rubberExtra == 0f) (hang.stretch / (sizePx * 6f)).coerceIn(-0.1f, 0.3f) else 0f
-        if (rubberExtra > 0f) {
-            // Arms between the fists and the head, legs near the bottom.
-            val hgt = sticker.height.toFloat()
-            var armsFrom = 0.12f
-            var armsTo = 0.22f
-            if (gripsOk && stickerLook == Look.Hang) {
-                val from = (maxOf(gripLy, gripRy) / hgt + 0.06f)
-                val to = (gripMidY / hgt - 0.01f)
-                if (to - from >= 0.03f) { armsFrom = from; armsTo = to }
-            }
-            // Arms are drawn by drawHanging; the art itself stretches its legs.
-            mesh.drawBands(c, sticker, x, y, armsFrom, armsTo, 0f, 0.74f, 0.92f, rubberExtra * 0.35f, hang.wobble.coerceIn(-sw * 0.6f, sw * 0.6f))
-        } else if (layout.pose == Pose.Hanging && mesh.deforms(hang.wobble, stretch, hang.squash)) {
+        val stretch = if (layout.pose == Pose.Hanging) (hang.stretch / (sizePx * 6f)).coerceIn(-0.1f, 0.3f) else 0f
+        if (layout.pose == Pose.Hanging && mesh.deforms(hang.wobble, stretch, hang.squash)) {
             mesh.draw(c, sticker, x, y, hang.wobble.coerceIn(-sw * 0.6f, sw * 0.6f), stretch, hang.squash)
         } else {
             c.drawBitmap(sticker, x, y, bmpPaint)
@@ -893,8 +842,7 @@ class FullBarView(context: Context) : View(context) {
         c.restore()
         if (state == BatteryState.Charging) {
             // Each character's own charging prop, floating beside them.
-            rubber()
-            charge.draw(c, chargeFx, left + sw + s * 0.08f, top + bob + s * 0.55f, s * 0.13f, f.chargeFrame)
+            charge.draw(c, chargeProp(), left + sw + s * 0.08f, top + bob + s * 0.55f, s * 0.13f, f.chargeFrame)
         }
     }
 
@@ -972,8 +920,6 @@ class FullBarView(context: Context) : View(context) {
         private const val HURT_MS = 1600L
         /** How much lower than the middle a fist may be and still count as raised. */
         private const val GRIP_SLACK = 0.05f
-        /** Luffy's arm colour for the stretched rubber arms. */
-        private const val RUBBER_SKIN = 0xFFFFD6B5.toInt()
         private val PERCENT = Array(101) { "$it%" }
     }
 }

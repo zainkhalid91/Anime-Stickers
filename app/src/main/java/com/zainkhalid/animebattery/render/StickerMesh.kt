@@ -46,44 +46,8 @@ class StickerMesh {
         c.drawBitmapMesh(bmp, COLS, ROWS, verts, 0, null, 0, paint)
     }
 
-    private val bandVerts = FloatArray((COLS + 1) * (BAND_ROWS + 1) * 2)
-
-    /**
-     * Rubber stretch: rows between [armsFrom] and [armsTo] (fractions of the height)
-     * stretch by [arms] px, rows between [legsFrom] and [legsTo] by [legs] px; the rest
-     * keeps its shape and just moves down.
-     */
-    fun drawBands(
-        c: Canvas, bmp: Bitmap, left: Float, top: Float,
-        armsFrom: Float, armsTo: Float, arms: Float,
-        legsFrom: Float, legsTo: Float, legs: Float, wobble: Float,
-    ) {
-        val w = bmp.width.toFloat()
-        val h = bmp.height.toFloat()
-        val cx = left + w / 2f
-        fun extra(v: Float): Float {
-            val a = ((v - armsFrom) / (armsTo - armsFrom)).coerceIn(0f, 1f) * arms
-            val l = ((v - legsFrom) / (legsTo - legsFrom)).coerceIn(0f, 1f) * legs
-            return a + l
-        }
-        var i = 0
-        for (r in 0..BAND_ROWS) {
-            val v = r / BAND_ROWS.toFloat()
-            val shift = wobble * v * v
-            val y = top + h * v + extra(v)
-            for (col in 0..COLS) {
-                val u = col / COLS.toFloat()
-                bandVerts[i++] = cx + (u - 0.5f) * w + shift
-                bandVerts[i++] = y
-            }
-        }
-        c.drawBitmapMesh(bmp, COLS, BAND_ROWS, bandVerts, 0, null, 0, paint)
-    }
-
     private companion object {
         const val COLS = 4
         const val ROWS = 6
-        /** Fine rows so the stretch bands line up with the art. */
-        const val BAND_ROWS = 40
     }
 }
