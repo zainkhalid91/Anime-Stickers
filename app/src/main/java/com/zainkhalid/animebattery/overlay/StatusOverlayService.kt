@@ -9,7 +9,6 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.PixelFormat
-import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +23,7 @@ import com.zainkhalid.animebattery.battery.BatteryState
 import com.zainkhalid.animebattery.battery.BatteryStateMachine
 import com.zainkhalid.animebattery.characters.Characters
 import com.zainkhalid.animebattery.settings.AppSettings
+import com.zainkhalid.animebattery.system.BatteryReader
 import com.zainkhalid.animebattery.widget.BatteryBuddyWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -88,8 +88,18 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
             when (i.action) {
                 Intent.ACTION_BATTERY_CHANGED -> onBattery(i)
                 Intent.ACTION_SCREEN_OFF -> { screenOn = false; refresh(measure = false) }
-                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> { screenOn = true; scheduleMeasure(150) }
-                Intent.ACTION_TIME_TICK, Intent.ACTION_TIME_CHANGED -> full.onClockTick()
+                Intent.ACTION_SCREEN_ON -> { screenOn = true; scheduleMeasure(150) }
+                Intent.ACTION_USER_PRESENT -> {
+                    screenOn = true
+                    scheduleMeasure(150)
+                    // Say hi once the bar is back up after unlocking.
+                    if (fullMode) handler.postDelayed({ if (fullAttached) full.view.greet() }, 900)
+                }
+                Intent.ACTION_TIME_TICK, Intent.ACTION_TIME_CHANGED -> {
+                    full.onClockTick()
+                    // The battery broadcast can freeze (see BatteryReader); re-read once a minute.
+                    recheckBattery()
+                }
                 PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
                     powerSave = getSystemService(PowerManager::class.java).isPowerSaveMode
                     pushState()
@@ -173,23 +183,19 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
 
     private fun applySettings() {
         badge.art = Characters.byId(settings.characterId)
+        badge.characterId = settings.characterId
         badge.showPercent = settings.showPercent
         full.view.characterId = settings.characterId
         full.view.layout = settings.barLayout
         full.view.sparklesAroundCamera = settings.sparkles
+        full.view.speech = settings.speech
+        full.view.interactive = settings.touchBuddy
         pushState()
     }
 
     private fun onBattery(i: Intent) {
-        val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-        val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
-        val plugged = i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
-        snapshot = BatterySnapshot(
-            level = if (level < 0) 50 else level * 100 / scale,
-            plugged = plugged,
-            full = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1) == BatteryManager.BATTERY_STATUS_FULL,
-            temperatureC = i.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 300) / 10f,
-        )
+        snapshot = BatteryReader.read(this, i).snapshot
+        val plugged = snapshot.plugged
         pushState()
         if (plugged != lastPlugged) {
             // The charging bolt slides in and moves the stock icon; follow it.
@@ -210,6 +216,18 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
             widgetLevel = s.level
             widgetState = state
             widgetScope.launch { runCatching { BatteryBuddyWidget.refresh(this@StatusOverlayService) } }
+        }
+    }
+
+    private fun recheckBattery() {
+        val now = BatteryReader.read(this).snapshot
+        if (now.level == snapshot.level && now.plugged == snapshot.plugged && now.full == snapshot.full) return
+        val pluggedChanged = now.plugged != snapshot.plugged
+        snapshot = now
+        pushState()
+        if (pluggedChanged) {
+            lastPlugged = now.plugged
+            scheduleMeasure(400)
         }
     }
 
@@ -312,6 +330,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
                 pushState()
             }
             "unforce" -> { forced = null; pushState() }
+            "say" -> full.view.say(extras.getStringExtra("text") ?: "hi!")
         }
     }
 

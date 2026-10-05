@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -15,6 +16,7 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.Display
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import com.zainkhalid.animebattery.battery.BatteryState
 
@@ -25,6 +27,11 @@ import com.zainkhalid.animebattery.battery.BatteryState
  * Background colour: we take an accessibility screenshot (Android 11+) and read a
  * handful of pixels on the row just below the status bar. The bitmap is only read in
  * memory and dropped straight away; nothing is stored. Throttled to at most ~1.5/s.
+ *
+ * The bar window never takes touches. For the hanging pose there's a second, small
+ * window just over the character (below the status bar, so the shade still opens)
+ * that passes its touches to [FullBarView.onCharacterTouch]. Android keeps sending a
+ * gesture to the window it started in, so a drag can go anywhere on screen.
  */
 class FullBarController(private val service: AccessibilityService) {
 
@@ -53,6 +60,27 @@ class FullBarController(private val service: AccessibilityService) {
         title = "AnimeBatteryFullBar"
     }
 
+    private val pad = View(service).apply {
+        contentDescription = "Your buddy. Tap to boop, drag to pull, flick to spin, hold to hide."
+        setOnTouchListener { _, ev -> view.onCharacterTouch(ev) }
+    }
+    private var padAttached = false
+    private val padBounds = RectF()
+    private val padParams = WindowManager.LayoutParams(
+        1, 1,
+        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        PixelFormat.TRANSLUCENT,
+    ).apply {
+        gravity = Gravity.TOP or Gravity.START
+        if (Build.VERSION.SDK_INT >= 30) {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+        title = "AnimeBatteryTouch"
+    }
+
     private val net = service.getSystemService(ConnectivityManager::class.java)
     private val netCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = readRadios()
@@ -61,6 +89,7 @@ class FullBarController(private val service: AccessibilityService) {
 
     init {
         view.onSizeNeeded = { h -> if (attached && params.height != h) { params.height = h; wm.updateViewLayout(view, params) } }
+        view.onCharacterMoved = { updatePad() }
         runCatching { net.registerDefaultNetworkCallback(netCallback, service.mainThreadHandler()) }
     }
 
@@ -89,12 +118,37 @@ class FullBarController(private val service: AccessibilityService) {
         } else {
             wm.updateViewLayout(view, params)
         }
+        updatePad()
     }
 
     fun detach() {
+        removePad()
         if (!attached) return
         runCatching { wm.removeView(view) }
         attached = false
+    }
+
+    /** Puts the touch window over the hanging character, or takes it away. */
+    fun updatePad() {
+        if (!attached || !view.characterTouchBounds(padBounds)) {
+            removePad()
+            return
+        }
+        val x = padBounds.left.toInt()
+        val y = padBounds.top.toInt()
+        val w = padBounds.width().toInt()
+        val h = padBounds.height().toInt()
+        if (padAttached && padParams.x == x && padParams.y == y && padParams.width == w && padParams.height == h) return
+        padParams.x = x; padParams.y = y; padParams.width = w; padParams.height = h
+        runCatching {
+            if (padAttached) wm.updateViewLayout(pad, padParams) else { wm.addView(pad, padParams); padAttached = true }
+        }.onFailure { Log.w("AnimeBattery", "touch window failed", it) }
+    }
+
+    private fun removePad() {
+        if (!padAttached) return
+        runCatching { wm.removeView(pad) }
+        padAttached = false
     }
 
     fun show(state: BatteryState, level: Int, animations: Boolean) {

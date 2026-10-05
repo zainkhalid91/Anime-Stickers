@@ -26,6 +26,14 @@ enum class DecorType(val label: String) {
     Cloud("Cloud"),
     Leaf("Leaf"),
     Wings("Wings"), // sits on the battery icon wherever it is
+    Pumpkin("Pumpkin"),
+    Bat("Bat"),
+    Candy("Candy"),
+    WitchHat("Witch hat"), // worn by the character
+    ;
+
+    /** Worn or attached to something, so there's one at most and it isn't dragged round. */
+    val attached: Boolean get() = this == Wings || this == WitchHat
 }
 
 /**
@@ -77,7 +85,11 @@ data class ThemeSet(
     val blurb: String,
     val colors: Pair<Long, Long>,
     val layout: BarLayout,
-)
+    /** Months (1..12) it's a limited drop, or null if it's always around. */
+    val season: IntRange? = null,
+) {
+    fun inSeason(month: Int) = season?.contains(month) == true
+}
 
 object ThemeSets {
     val all = listOf(
@@ -104,6 +116,19 @@ object ThemeSets {
             ),
         ),
         ThemeSet(
+            "halloween", "Halloween", "Witch hat on, pumpkins out, bats on patrol",
+            0xFFFF8A1F to 0xFF2B1D45,
+            BarLayout(
+                pose = Pose.Hanging, characterSizeDp = 44f,
+                decor = listOf(
+                    Decor(DecorType.WitchHat, 0f, 0f, 1f),
+                    Decor(DecorType.Pumpkin, 0.30f, 14f, 1.1f), Decor(DecorType.Bat, 0.64f, 12f, 1f),
+                    Decor(DecorType.Bat, 0.72f, 26f, 0.7f), Decor(DecorType.Candy, 0.38f, 32f, 0.8f),
+                ),
+            ),
+            season = 10..10,
+        ),
+        ThemeSet(
             "spooky", "Spooky Night", "A spider on a thread, a web in the corner, eyes by the camera",
             0xFF312E81 to 0xFF0F172A,
             BarLayout(
@@ -117,4 +142,7 @@ object ThemeSets {
     )
 
     fun byId(id: String) = all.firstOrNull { it.id == id }
+
+    /** Seasonal drops that are live this month first, then the rest. */
+    fun ordered(month: Int) = all.sortedByDescending { it.inSeason(month) }
 }

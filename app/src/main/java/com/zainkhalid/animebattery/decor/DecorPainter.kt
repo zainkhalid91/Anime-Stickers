@@ -34,8 +34,110 @@ class DecorPainter(private val d: Float) {
             DecorType.Ghost -> ghost(c, cx, cy + sin(2 * PI * t).toFloat() * 1.5f * d, s * 0.55f)
             DecorType.Cloud -> cloud(c, cx, cy, s * 0.6f)
             DecorType.Leaf -> leaf(c, cx, cy, s * 0.55f, sin(2 * PI * t).toFloat() * 12f)
-            DecorType.Wings -> Unit // drawn round the battery icon by the bar
+            DecorType.Wings, DecorType.WitchHat -> Unit // drawn by the bar on the battery / character
+            DecorType.Pumpkin -> pumpkin(c, cx, cy, s * 0.5f)
+            DecorType.Bat -> bat(c, cx, cy + sin(2 * PI * t).toFloat() * 1.8f * d, s * 0.5f, sin(4 * PI * t).toFloat())
+            DecorType.Candy -> candy(c, cx, cy, s * 0.45f)
         }
+    }
+
+    private fun pumpkin(c: Canvas, x: Float, y: Float, rad: Float) {
+        p.color = 0xFFFF8A1F.toInt()
+        for (i in -1..1) {
+            r.set(x + i * rad * 0.42f - rad * 0.62f, y - rad * 0.8f, x + i * rad * 0.42f + rad * 0.62f, y + rad * 0.8f)
+            c.drawOval(r, p)
+        }
+        line.color = 0xFFB34E00.toInt(); line.strokeWidth = 1.1f * d
+        for (i in -1..1 step 2) {
+            r.set(x + i * rad * 0.21f - rad * 0.5f, y - rad * 0.78f, x + i * rad * 0.21f + rad * 0.5f, y + rad * 0.78f)
+            c.drawOval(r, line)
+        }
+        // Stem and a jack-o'-lantern face.
+        line.color = 0xFF3F7D2A.toInt(); line.strokeWidth = 2.2f * d
+        c.drawLine(x, y - rad * 0.75f, x + rad * 0.15f, y - rad * 1.15f, line)
+        p.color = 0xFF2A1400.toInt()
+        for (side in intArrayOf(-1, 1)) {
+            path.reset()
+            path.moveTo(x + side * rad * 0.42f, y - rad * 0.32f)
+            path.lineTo(x + side * rad * 0.2f, y - rad * 0.02f)
+            path.lineTo(x + side * rad * 0.62f, y - rad * 0.02f)
+            path.close()
+            c.drawPath(path, p)
+        }
+        path.reset()
+        path.moveTo(x - rad * 0.55f, y + rad * 0.18f)
+        path.quadTo(x, y + rad * 0.75f, x + rad * 0.55f, y + rad * 0.18f)
+        path.quadTo(x, y + rad * 0.42f, x - rad * 0.55f, y + rad * 0.18f)
+        path.close()
+        c.drawPath(path, p)
+    }
+
+    private fun bat(c: Canvas, x: Float, y: Float, rad: Float, flap: Float) {
+        p.color = 0xFF231A33.toInt()
+        for (side in intArrayOf(-1, 1)) {
+            val tipY = y - rad * (0.55f + 0.35f * flap)
+            path.reset()
+            path.moveTo(x, y - rad * 0.1f)
+            path.quadTo(x + side * rad * 0.9f, tipY - rad * 0.2f, x + side * rad * 1.7f, tipY)
+            path.quadTo(x + side * rad * 1.45f, y + rad * 0.1f, x + side * rad * 1.15f, y + rad * 0.25f)
+            path.quadTo(x + side * rad * 0.95f, y + rad * 0.05f, x + side * rad * 0.7f, y + rad * 0.35f)
+            path.quadTo(x + side * rad * 0.45f, y + rad * 0.1f, x, y + rad * 0.3f)
+            path.close()
+            c.drawPath(path, p)
+        }
+        c.drawCircle(x, y, rad * 0.42f, p)
+        // Ears.
+        path.reset()
+        path.moveTo(x - rad * 0.32f, y - rad * 0.2f); path.lineTo(x - rad * 0.25f, y - rad * 0.65f); path.lineTo(x - rad * 0.05f, y - rad * 0.35f)
+        path.moveTo(x + rad * 0.32f, y - rad * 0.2f); path.lineTo(x + rad * 0.25f, y - rad * 0.65f); path.lineTo(x + rad * 0.05f, y - rad * 0.35f)
+        c.drawPath(path, p)
+        p.color = 0xFFFFD23F.toInt()
+        c.drawCircle(x - rad * 0.15f, y - rad * 0.05f, rad * 0.09f, p)
+        c.drawCircle(x + rad * 0.15f, y - rad * 0.05f, rad * 0.09f, p)
+    }
+
+    private fun candy(c: Canvas, x: Float, y: Float, rad: Float) {
+        // Wrapped sweet: two twists and a striped middle.
+        p.color = 0xFFFF4FA3.toInt()
+        for (side in intArrayOf(-1, 1)) {
+            path.reset()
+            path.moveTo(x + side * rad * 0.6f, y)
+            path.lineTo(x + side * rad * 1.35f, y - rad * 0.55f)
+            path.lineTo(x + side * rad * 1.35f, y + rad * 0.55f)
+            path.close()
+            c.drawPath(path, p)
+        }
+        c.drawCircle(x, y, rad * 0.7f, p)
+        line.color = Color.WHITE; line.strokeWidth = rad * 0.22f
+        c.save()
+        path.reset(); path.addCircle(x, y, rad * 0.7f, Path.Direction.CW); c.clipPath(path)
+        for (i in -2..2) c.drawLine(x + i * rad * 0.45f - rad, y + rad, x + i * rad * 0.45f + rad, y - rad, line)
+        c.restore()
+        line.color = 0xFF0D0A14.toInt(); line.strokeWidth = 1f * d
+        c.drawCircle(x, y, rad * 0.7f, line)
+    }
+
+    /** A witch hat sitting on a character whose sticker box is [left], [top], [w] x [h]. */
+    fun witchHat(c: Canvas, left: Float, top: Float, w: Float, h: Float) {
+        val cx = left + w * 0.5f
+        val brimY = top + h * 0.13f
+        val bw = w * 0.5f
+        p.color = 0xFF2B1D45.toInt()
+        // Cone, bent over at the tip.
+        path.reset()
+        path.moveTo(cx - bw * 0.55f, brimY)
+        path.quadTo(cx - bw * 0.2f, brimY - h * 0.3f, cx + bw * 0.25f, brimY - h * 0.42f)
+        path.quadTo(cx + bw * 0.1f, brimY - h * 0.25f, cx + bw * 0.55f, brimY)
+        path.close()
+        c.drawPath(path, p)
+        r.set(cx - bw, brimY - h * 0.05f, cx + bw, brimY + h * 0.05f)
+        c.drawOval(r, p)
+        // Band.
+        p.color = 0xFFFF8A1F.toInt()
+        r.set(cx - bw * 0.5f, brimY - h * 0.08f, cx + bw * 0.5f, brimY - h * 0.025f)
+        c.drawRect(r, p)
+        line.color = 0xFF0D0A14.toInt(); line.strokeWidth = 1.1f * d
+        c.drawPath(path, line)
     }
 
     fun sparkle(c: Canvas, x: Float, y: Float, size: Float, color: Int) {

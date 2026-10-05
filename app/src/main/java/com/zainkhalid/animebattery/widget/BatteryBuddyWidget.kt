@@ -1,10 +1,6 @@
 package com.zainkhalid.animebattery.widget
 
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.BatteryManager
-import android.os.PowerManager
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -24,10 +20,10 @@ import androidx.glance.appwidget.updateAll
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.fillMaxSize
 import com.zainkhalid.animebattery.MainActivity
-import com.zainkhalid.animebattery.battery.BatterySnapshot
 import com.zainkhalid.animebattery.battery.BatteryState
 import com.zainkhalid.animebattery.battery.BatteryStateMachine
 import com.zainkhalid.animebattery.settings.AppSettings
+import com.zainkhalid.animebattery.system.BatteryReader
 import kotlin.math.roundToInt
 
 /**
@@ -35,7 +31,8 @@ import kotlin.math.roundToInt
  * (2x2) and battery buddy (4x2). The art is a bitmap from [WidgetArt].
  *
  * Updated by the overlay service when the level or state changes (see [refresh]),
- * so it costs nothing in between.
+ * when the app opens, and every 30 minutes as a fallback (updatePeriodMillis), so it
+ * can't sit on an old number if the service isn't running (e.g. after a force stop).
  */
 class BatteryBuddyWidget : GlanceAppWidget() {
 
@@ -65,19 +62,8 @@ class BatteryBuddyWidget : GlanceAppWidget() {
 
     companion object {
         fun readBattery(context: Context): Pair<Int, BatteryState> {
-            val i = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val level = i?.let {
-                val l = it.getIntExtra(BatteryManager.EXTRA_LEVEL, 50)
-                val s = it.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
-                l * 100 / s
-            } ?: 50
-            val snap = BatterySnapshot(
-                level = level,
-                plugged = (i?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0,
-                temperatureC = (i?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 300) ?: 300) / 10f,
-                powerSave = context.getSystemService(PowerManager::class.java).isPowerSaveMode,
-            )
-            return level to BatteryStateMachine().update(snap)
+            val snap = BatteryReader.read(context).snapshot
+            return snap.level to BatteryStateMachine().update(snap)
         }
 
         /** Redraw every placed widget. Call only when level or state changed. */

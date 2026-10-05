@@ -5,6 +5,12 @@ budget is about **22 mAh/h**.
 
 ## How we measure
 
+> **Always finish with `adb shell dumpsys battery reset`.** `dumpsys battery unplug` (and
+> `set level`) freeze Android's battery reading: the stock status bar, low-battery warning
+> and auto-shutdown keep the old number until reset or reboot. The phone can show 84% while
+> it's really about to die. The app reads the hardware directly and shows a warning on
+> the Buddy screen while this is happening (see `system/BatteryReader.kt`).
+
 ```bash
 adb shell settings put global stay_on_while_plugged_in 7   # keep the screen on (restore after!)
 adb shell dumpsys battery unplug                            # stats only count while "on battery"

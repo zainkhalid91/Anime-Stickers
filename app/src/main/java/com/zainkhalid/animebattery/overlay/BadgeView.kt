@@ -29,6 +29,9 @@ class BadgeView(context: Context) : View(context) {
         set(v) { field = v; invalidate() }
     var showPercent = true
         set(v) { field = v; invalidate() }
+    /** Which character's sticker to show (the vector [art] only exists for Naruto). */
+    var characterId = "naruto"
+        set(v) { field = v; invalidate() }
 
     private val painter = BadgePainter(resources.displayMetrics.density)
     private val tick = Runnable { tickNow() }
@@ -69,7 +72,7 @@ class BadgeView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         val sticker = if (useSticker) {
-            StickerCache.get(context, art.id, (BadgeLayout.ART_HEIGHT * layout.unit).roundToInt())
+            StickerCache.get(context, characterId, (BadgeLayout.ART_HEIGHT * layout.unit).roundToInt())
         } else null
         painter.paint(canvas, art, animator.frame, layout, showPercent, sticker)
     }

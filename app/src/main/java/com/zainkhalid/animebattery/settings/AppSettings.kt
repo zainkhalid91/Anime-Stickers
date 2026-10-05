@@ -71,6 +71,16 @@ class AppSettings(context: Context) {
             ?: BarLayout(characterSizeDp = characterSizeDp, pose = if (characterSpot == SPOT_CAMERA) Pose.Camera else Pose.Hanging)
         set(v) = prefs.edit().putString(LAYOUT, v.toJson()).apply()
 
+    /** The character says a line when its mood changes and when you unlock. */
+    var speech: Boolean
+        get() = prefs.getBoolean(SPEECH, true)
+        set(v) = prefs.edit().putBoolean(SPEECH, v).apply()
+
+    /** You can grab, flick and poke the hanging character (blocks taps right under it). */
+    var touchBuddy: Boolean
+        get() = prefs.getBoolean(TOUCH, true)
+        set(v) = prefs.edit().putBoolean(TOUCH, v).apply()
+
     /** Id of the collection last applied, for the "Applied" badge. */
     var themeId: String?
         get() = prefs.getString(THEME, null)
@@ -94,5 +104,7 @@ class AppSettings(context: Context) {
         const val HIDE_ON_LOCK = "hide_on_lock"
         const val ANIMATIONS = "animations"
         const val PAUSED = "paused"
+        const val SPEECH = "speech"
+        const val TOUCH = "touch_buddy"
     }
 }

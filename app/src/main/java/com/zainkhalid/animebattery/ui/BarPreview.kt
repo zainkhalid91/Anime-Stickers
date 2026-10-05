@@ -23,6 +23,7 @@ fun BarPreview(
     sparkles: Boolean = true,
     animations: Boolean = true,
     characterId: String = "naruto",
+    speech: Boolean = true,
 ) {
     val d = LocalDensity.current.density
     AndroidView(
@@ -34,6 +35,7 @@ fun BarPreview(
             v.endPad = 24 * d
             v.characterId = characterId
             v.sparklesAroundCamera = sparkles
+            v.speech = speech
             v.wifiLevel = 3
             v.cellLevel = 3
             v.animator.animationsEnabled = animations

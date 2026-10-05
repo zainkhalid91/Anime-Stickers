@@ -2,60 +2,32 @@ package com.zainkhalid.animebattery
 
 import android.content.Intent
 import android.os.Bundle
-import com.zainkhalid.animebattery.ui.WidgetsScreen
-import com.zainkhalid.animebattery.ui.WallpaperScreen
-import com.zainkhalid.animebattery.ui.EditorScreen
-import com.zainkhalid.animebattery.ui.Dest
-import com.zainkhalid.animebattery.ui.HomeScreen
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.material3.TextButton
-import androidx.activity.compose.BackHandler
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.WindowInsets
-import com.zainkhalid.animebattery.ui.lab.LabScreen
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.material3.Tab
-import androidx.compose.material3.PrimaryTabRow
-import com.zainkhalid.animebattery.settings.AppSettings
-import com.zainkhalid.animebattery.ui.PreviewScreen
-import com.zainkhalid.animebattery.ui.AnimeBatteryTheme
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
-import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
 import com.zainkhalid.animebattery.characters.Characters
+import com.zainkhalid.animebattery.decor.Pose
+import com.zainkhalid.animebattery.overlay.OverlayHealth
 import com.zainkhalid.animebattery.overlay.StatusOverlayService
 import com.zainkhalid.animebattery.render.ArtSheet
+import com.zainkhalid.animebattery.settings.AppSettings
 import com.zainkhalid.animebattery.system.StockIconController
+import com.zainkhalid.animebattery.ui.AnimeBatteryTheme
+import com.zainkhalid.animebattery.ui.AppShell
+import com.zainkhalid.animebattery.widget.BatteryBuddyWidget
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * Phase 0 spike screen. Every button also works from adb:
+ * Hosts the app UI. Debug commands also work from adb:
  * adb shell am start -n com.zainkhalid.animebattery/.MainActivity --es cmd hide_icon
  */
 class MainActivity : ComponentActivity() {
 
     private lateinit var stock: StockIconController
+    private var healing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -63,34 +35,28 @@ class MainActivity : ComponentActivity() {
         stock = StockIconController(this)
         handle(intent)
         setContent {
-            AnimeBatteryTheme {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    Column(
-                        Modifier.windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        var dest by rememberSaveable { mutableStateOf(Dest.Home) }
-                        BackHandler(enabled = dest != Dest.Home) { dest = Dest.Home }
-                        val back = { dest = Dest.Home }
-                        when (dest) {
-                            Dest.Home -> HomeScreen(go = { dest = it })
-                            Dest.Editor -> EditorScreen(onClose = back)
-                            Dest.Wallpapers -> WallpaperScreen(onClose = back)
-                            Dest.Widgets -> WidgetsScreen(onClose = back)
-                            Dest.Ideas -> {
-                                TextButton(onClick = back) { Text("‹ Back") }
-                                var tab by rememberSaveable { mutableIntStateOf(0) }
-                                PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
-                                    Tab(tab == 0, { tab = 0 }, text = { Text("Ideas") })
-                                    Tab(tab == 1, { tab = 1 }, text = { Text("Badge preview") })
-                                }
-                                if (tab == 0) LabScreen()
-                                else PreviewScreen(Characters.byId(AppSettings(this@MainActivity).characterId), showPercent = true, size = 1f)
-                            }
-                        }
-                    }
-                }
-            }
+            AnimeBatteryTheme { AppShell() }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // The widget can't update while the app is force-stopped; catch it up on open.
+        lifecycleScope.launch { runCatching { BatteryBuddyWidget.refresh(this@MainActivity) } }
+        healOverlay()
+    }
+
+    /**
+     * If a crash took the overlay down, Android won't bring it back by itself. Give the
+     * system a moment to bind it normally, then restart it if it's still missing.
+     */
+    private fun healOverlay() {
+        if (healing || !OverlayHealth.canRestart(this)) return
+        healing = true
+        lifecycleScope.launch {
+            delay(1500)
+            if (OverlayHealth.status(this@MainActivity) == OverlayHealth.Status.Stopped) OverlayHealth.restart(this@MainActivity)
+            healing = false
         }
     }
 
@@ -108,6 +74,13 @@ class MainActivity : ComponentActivity() {
             "hide_icon" -> Log.i("AnimeBattery", "hide -> ${stock.hide()}")
             "restore_icon" -> Log.i("AnimeBattery", "restore -> ${stock.restore()}")
             "sheet" -> Characters.all.forEach { Log.i("AnimeBattery", "sheet -> ${ArtSheet.render(this, it)}") }
+            "pose" -> {
+                // adb ... --es cmd pose --es pose Hanging
+                val settings = AppSettings(this)
+                val pose = runCatching { Pose.valueOf(intent?.getStringExtra("pose") ?: "") }.getOrNull() ?: return
+                settings.barLayout = settings.barLayout.copy(pose = pose)
+                Log.i("AnimeBattery", "pose -> $pose")
+            }
             else -> StatusOverlayService.instance?.run(cmd, intent ?: Intent())
                 ?: Log.w("AnimeBattery", "service not running, can't run $cmd")
         }
