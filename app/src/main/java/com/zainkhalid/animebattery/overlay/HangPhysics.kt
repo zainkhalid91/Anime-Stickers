@@ -34,6 +34,9 @@ class HangPhysics {
 
     var dragging = false; private set
 
+    /** How far the rubber band goes, in rest lengths (more for a rubber character). */
+    var maxStretch = 3.5f
+
     /**
      * Rope length at which the head touches the camera. Coming up faster than a gentle
      * float, it bonks: it bounces off and [takeHit] reports how hard.
@@ -89,7 +92,7 @@ class HangPhysics {
         val dist = hypot(dx, dy) - grabOffset
         // Rubber band: easy to pull a bit, harder the further you go.
         val raw = dist - restLength
-        val max = restLength * 3.5f
+        val max = restLength * maxStretch
         var s = if (raw > 0) max * (1f - 1f / (1f + raw / max)) else raw.coerceAtLeast(-restLength * 0.98f)
         if (collide && cameraLength > 0f) {
             val floor = cameraLength - restLength
