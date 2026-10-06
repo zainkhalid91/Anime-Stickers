@@ -23,7 +23,7 @@ from comfy_gen import NEGATIVE, SERVER, workflow  # noqa: E402
 OUT = pathlib.Path(__file__).resolve().parent.parent / "art" / "raw" / "cast"
 
 # One sticker = one character, never a pair or a turnaround.
-EXTRA_NEGATIVE = ", 2girls, 2boys, multiple girls, multiple boys, duplicate, clone, reference sheet, noose"
+EXTRA_NEGATIVE = ", 2girls, 2boys, multiple girls, multiple boys, duplicate, clone, reference sheet, noose, blood, bleeding, dripping, melting, slime, liquid"
 
 STYLE = "chibi, full body, big head, cute, simple background, white background, flat color, thick outlines"
 
@@ -52,7 +52,8 @@ LOOKS = {
     # One look per battery mood, so the slider shows a different pose at every level.
     "meh": "bored, half-closed eyes, sigh, slouching, deadpan, unimpressed, standing, arms down",
     "tired": "exhausted, very tired, sweat, sweatdrop, droopy eyes, slumped, panting, low energy, kneeling",
-    "hot": "sweating, flushed, red face, fanning self, holding hand fan, tongue out, heat, steam, melting",
+    # Not "melting" or "steam": they come out as drips and big white clouds.
+    "hot": "sweating, heavy sweat, flushed, red face, blush, fanning self, holding hand fan, tongue out, hot, summer, standing",
     "power": "determined, fist pump, clenched fist, confident grin, powering up, glowing aura, energy, standing",
 }
 
