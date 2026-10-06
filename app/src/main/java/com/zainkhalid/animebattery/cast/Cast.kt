@@ -1,5 +1,6 @@
 package com.zainkhalid.animebattery.cast
 
+import com.zainkhalid.animebattery.decor.ChargeFx
 import com.zainkhalid.animebattery.decor.Mood
 
 /** A pose drawn as its own sticker. Missing looks fall back to [Idle]. */
@@ -11,6 +12,10 @@ enum class Look(val key: String) {
     Sleep("sleep"),
     Cheer("cheer"),
     Hurt("hurt"),
+    Meh("meh"),
+    Tired("tired"),
+    Hot("hot"),
+    Power("power"),
 }
 
 /** Things that happen to the character, each with its own lines. */
@@ -28,15 +33,21 @@ data class CastMember(
     val accent: Long,
     val moods: Map<Mood, List<String>>,
     val events: Map<Event, List<String>>,
+    /** What they hold while charging. */
+    val charge: ChargeFx = ChargeFx.None,
 )
 
-/** Which look fits a battery mood when nothing else is going on. */
+/** Which look fits a battery mood: every mood has its own pose. */
 fun Mood.look(hanging: Boolean): Look = when (this) {
-    Mood.Sleeping -> Look.Sleep
+    Mood.Hyped, Mood.FullPower -> Look.Cheer
+    Mood.Chill -> if (hanging) Look.Hang else Look.Idle
+    Mood.Meh -> Look.Meh
+    Mood.Tired -> Look.Tired
     Mood.Fainting -> Look.Dizzy
-    Mood.FullPower, Mood.Hyped -> Look.Cheer
+    Mood.PoweringUp -> Look.Power
+    Mood.Sleeping -> Look.Sleep
+    Mood.Overheating -> Look.Hot
     Mood.Hurt -> Look.Hurt
-    else -> if (hanging) Look.Hang else Look.Idle
 }
 
 /** The five characters (personal build, so any series). */
@@ -64,6 +75,7 @@ object Cast {
             Event.Peek to listOf("surprise, it's me!", "ninja comeback!"),
             Event.Hurt to listOf("OW! that's the camera, dattebayo!", "my forehead protector didn't help…", "ouch ouch ouch"),
         ),
+        charge = ChargeFx.Rasengan,
     )
 
     val luffy = CastMember(
@@ -89,6 +101,7 @@ object Cast {
             Event.Peek to listOf("found me!", "i'm back! got meat?"),
             Event.Hurt to listOf("ow! even rubber felt that", "that camera's harder than garp's fist", "OUCH, haha"),
         ),
+        charge = ChargeFx.Meat,
     )
 
     val gojo = CastMember(
@@ -114,6 +127,7 @@ object Cast {
             Event.Peek to listOf("miss me?", "the strongest is back"),
             Event.Hurt to listOf("ow?! infinity was OFF", "okay, who turned off infinity", "that… actually hurt"),
         ),
+        charge = ChargeFx.HollowPurple,
     )
 
     val anya = CastMember(
@@ -139,16 +153,19 @@ object Cast {
             Event.Peek to listOf("anya is back!", "surprise mission!"),
             Event.Hurt to listOf("anya hit her head… waaah", "that's a tonitrus bolt for the camera", "ow ow ow"),
         ),
+        charge = ChargeFx.Peanut,
     )
 
     /**
-     * Claude, as Claude would like to look in an anime: fluffy terracotta hair, a little
+     * Kotoha (言葉 kotoba "words" + 葉 ha "leaf"): Claude, as Claude would like to look
+     * in an anime, named for what it's made of. The id stays "claude" for the art files.
+     * Looks: fluffy terracotta hair, a little
      * orange spark clip, round glasses, an oversized cream sweater and a notebook,
      * because it's always thinking something through. Kind, curious, a bit nerdy,
      * honest even when the battery news is bad.
      */
     val claude = CastMember(
-        "claude", "Claude", "Original", "Anthropic", 0xFFD97757,
+        "claude", "Kotoha", "Original", "Anthropic", 0xFFD97757,
         moods = mapOf(
             Mood.Hyped to listOf("fully charged and curious about everything", "what are we building today?", "ok, i have ideas"),
             Mood.Chill to listOf("hmm, let me think about that…", "taking notes on your day", "all good here, genuinely"),
@@ -170,6 +187,7 @@ object Cast {
             Event.Peek to listOf("i'm back, with thoughts", "okay, where were we?"),
             Event.Hurt to listOf("ow — note to self: the camera is solid", "i'd like to file a gentle complaint", "ouch. i'm okay. mostly."),
         ),
+        charge = ChargeFx.Spark,
     )
 
     val all = listOf(naruto, luffy, gojo, anya, claude)
