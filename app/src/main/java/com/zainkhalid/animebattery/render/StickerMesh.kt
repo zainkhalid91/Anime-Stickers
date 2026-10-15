@@ -14,6 +14,11 @@ class StickerMesh {
     private val verts = FloatArray((COLS + 1) * (ROWS + 1) * 2)
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
 
+    /** For crossfading between poses. */
+    var alpha: Int
+        get() = paint.alpha
+        set(v) { paint.alpha = v }
+
     /** True if the shape would look different from a plain drawBitmap. */
     fun deforms(wobble: Float, stretch: Float, squash: Float) =
         kotlin.math.abs(wobble) > 0.3f || kotlin.math.abs(stretch) > 0.004f || squash > 0.01f

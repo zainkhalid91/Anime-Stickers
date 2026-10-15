@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -48,7 +49,15 @@ import com.zainkhalid.animebattery.ui.kit.stickerPainter
 import com.zainkhalid.animebattery.decor.DecorType
 import com.zainkhalid.animebattery.decor.Lines
 import com.zainkhalid.animebattery.decor.Mood
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.zainkhalid.animebattery.battery.BatterySnapshot
+import com.zainkhalid.animebattery.battery.BatteryState
+import com.zainkhalid.animebattery.battery.BatteryStateMachine
 import com.zainkhalid.animebattery.overlay.OverlayHealth
+import com.zainkhalid.animebattery.overlay.StatusOverlayService
+import com.zainkhalid.animebattery.ui.kit.MoodBadge
+import kotlin.math.roundToInt
 import com.zainkhalid.animebattery.settings.AppSettings
 import com.zainkhalid.animebattery.ui.kit.CharacterStage
 import com.zainkhalid.animebattery.ui.kit.IconBadge
@@ -75,8 +84,22 @@ fun BuddyScreen(go: (Tab) -> Unit, open: (Sub) -> Unit) {
     // Brief pose after a poke on the stage.
     var pokeLook by remember { mutableStateOf<Look?>(null) }
     val live = rememberLiveBattery()
-    var preview by remember { mutableStateOf<Mood?>(null) }
-    val mood = preview ?: Mood.of(live.state)
+    // Battery test: a pretend battery shown here and on the real status bar.
+    var test by remember { mutableStateOf(StatusOverlayService.instance?.testing) }
+    val testState = test?.let { BatteryStateMachine().update(it) }
+    val mood = Mood.of(testState ?: live.state)
+    val level = test?.level ?: live.level
+    fun setTest(t: BatterySnapshot?) {
+        test = t
+        StatusOverlayService.instance?.testBattery(t)
+    }
+    // The test only lives while you're looking at it: leave the screen or the app and
+    // the bar goes straight back to the real battery.
+    LifecycleResumeEffect(Unit) {
+        onPauseOrDispose {
+            if (test != null) setTest(null)
+        }
+    }
     var layout by remember { mutableStateOf(settings.barLayout) }
     var overlay by remember { mutableStateOf(OverlayHealth.status(context)) }
     val scope = rememberCoroutineScope()
@@ -115,6 +138,11 @@ fun BuddyScreen(go: (Tab) -> Unit, open: (Sub) -> Unit) {
             Modifier.clip(CircleShape).clickable(onClickLabel = "Customise in Studio") { go(Tab.Studio) },
             size = 48.dp,
         )
+    }
+
+    MasterSwitch(on = !paused) {
+        paused = !it
+        settings.paused = !it
     }
 
     if (overlay == OverlayHealth.Status.Stopped) {
@@ -167,7 +195,7 @@ fun BuddyScreen(go: (Tab) -> Unit, open: (Sub) -> Unit) {
         characterId = characterId,
         look = pokeLook ?: mood.look(hanging = false),
         mood = mood,
-        level = live.level,
+        level = level,
         bubble = bubble,
         onPoke = {
             say(Lines.on(Event.Poke, characterId))
@@ -211,14 +239,31 @@ fun BuddyScreen(go: (Tab) -> Unit, open: (Sub) -> Unit) {
         }
     }
 
-    // Try the moods.
-    SectionTitle("Moods") {
-        Text(if (preview == null) "live" else "preview", style = MaterialTheme.typography.labelMedium, color = Pop.TextDim)
+    // Try every mood: pretend battery, on the stage and the real status bar.
+    SectionTitle("Battery test") {
+        Text(if (test == null) "real battery" else "testing", style = MaterialTheme.typography.labelMedium, color = if (test == null) Pop.TextDim else Pop.Sun)
     }
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        PopChip("Live", selected = preview == null, onClick = { preview = null }, accent = Pop.Lime, dot = Pop.Lime)
-        Mood.entries.filterNot { it.reactionOnly }.forEach { m ->
-            PopChip(m.word, selected = preview == m, onClick = { preview = m }, accent = Color(m.color), dot = Color(m.color))
+    PopCard {
+        // A clean test battery: not charging, not hot, no saver (each chip adds one).
+        val t = test ?: BatterySnapshot(live.level, plugged = false)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${t.level}%", style = MaterialTheme.typography.headlineMedium, color = Pop.Text, modifier = Modifier.weight(1f))
+            MoodBadge(mood)
+        }
+        PopSlider(t.level.toFloat(), 0f..100f) { setTest(t.copy(level = it.roundToInt())) }
+        MoodScale()
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PopChip("Charging", t.plugged, { setTest(t.copy(plugged = !t.plugged, full = false)) }, accent = Pop.Lime, dot = Pop.Lime)
+            PopChip("Hot", t.temperatureC >= 42f, { setTest(t.copy(temperatureC = if (t.temperatureC >= 42f) 30f else 44f)) }, accent = Pop.Coral, dot = Pop.Coral)
+            PopChip("Power saver", t.powerSave, { setTest(t.copy(powerSave = !t.powerSave)) }, accent = Pop.Lilac, dot = Pop.Lilac)
+        }
+        Text(
+            if (StatusOverlayService.instance == null) "Turn the overlay on to see this in your status bar too."
+            else "Your status bar shows this too, until you leave this screen.",
+            style = MaterialTheme.typography.bodySmall, color = Pop.TextDim,
+        )
+        if (test != null) {
+            PopButton("Back to real battery", onClick = { setTest(null) }, color = Pop.SurfaceHigh, contentColor = Pop.Text, modifier = Modifier.fillMaxWidth())
         }
     }
 
@@ -229,7 +274,7 @@ fun BuddyScreen(go: (Tab) -> Unit, open: (Sub) -> Unit) {
             BarPreview(
                 layout, Modifier.fillMaxWidth().height(150.dp),
                 background = 0xFF1A1426.toInt(),
-                level = live.level, state = preview?.let { Mood.sample(it) } ?: live.state,
+                level = level, state = testState ?: live.state,
                 sparkles = settings.sparkles, animations = animations, characterId = characterId,
                 speech = false,
             )
@@ -242,9 +287,6 @@ fun BuddyScreen(go: (Tab) -> Unit, open: (Sub) -> Unit) {
 
     // Main switches.
     PopCard {
-        PopToggle("Show on status bar", if (paused) "Hidden for now" else "Your buddy is out", !paused) {
-            paused = !it; settings.paused = !it
-        }
         PopToggle("Speech bubbles", "Says something when the mood changes or you unlock", speech) {
             speech = it; settings.speech = it
         }
@@ -277,6 +319,54 @@ private fun StuckBatteryCard(real: Int, shown: Int) {
             style = MaterialTheme.typography.labelLarge.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
             color = Pop.Text,
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Pop.Ink).padding(12.dp),
+        )
+    }
+}
+
+/** The big on/off for everything the app shows. Also on the Quick Settings tile. */
+@Composable
+private fun MasterSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
+    PopCard(color = if (on) Pop.Lime else Pop.Coral, sticker = true, onClick = { onChange(!on) }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(if (on) "Anime Battery is on" else "Anime Battery is off", style = MaterialTheme.typography.titleLarge, color = Pop.Ink)
+                Text(
+                    if (on) "Tap to hide everything right away. Tip: add the Quick Settings tile to do it from anywhere."
+                    else "Nothing is showing. Tap to bring your buddy back.",
+                    style = MaterialTheme.typography.bodySmall, color = Pop.Ink,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = on, onCheckedChange = onChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Pop.Lime, checkedTrackColor = Pop.Ink, checkedBorderColor = Pop.Ink,
+                    uncheckedThumbColor = Pop.Coral, uncheckedTrackColor = Pop.Ink, uncheckedBorderColor = Pop.Ink,
+                ),
+            )
+        }
+    }
+}
+
+/** Where each battery mood starts, as a coloured strip under the slider. */
+@Composable
+private fun MoodScale() {
+    val bands = listOf(Mood.Fainting to 6f, Mood.Tired to 15f, Mood.Meh to 30f, Mood.Chill to 30f, Mood.Hyped to 20f)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape)) {
+            bands.forEach { (m, w) -> Box(Modifier.weight(w).fillMaxHeight().background(Color(m.color))) }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            bands.forEach { (m, w) ->
+                Text(
+                    if (w < 10f) "" else m.word, style = MaterialTheme.typography.labelSmall, color = Pop.TextDim,
+                    modifier = Modifier.weight(w), maxLines = 1,
+                )
+            }
+        }
+        Text(
+            "0–5 fainting · 6–20 tired · 21–50 meh · 51–80 chill · 81–100 hyped. Chips: charging, hot, power saver.",
+            style = MaterialTheme.typography.bodySmall, color = Pop.TextDim,
         )
     }
 }

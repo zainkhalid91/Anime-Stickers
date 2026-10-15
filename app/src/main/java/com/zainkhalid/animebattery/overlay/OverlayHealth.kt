@@ -59,13 +59,16 @@ object OverlayHealth {
         val resolver = context.contentResolver
         val key = Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         val me = component(context)
-        val others = (Settings.Secure.getString(resolver, key) ?: "").split(':')
-            .filter { it.isNotBlank() && ComponentName.unflattenFromString(it) != me }
+        val original = Settings.Secure.getString(resolver, key) ?: ""
+        val others = original.split(':').filter { it.isNotBlank() && ComponentName.unflattenFromString(it) != me }
+        // If the app dies between "off" and "on" (an update, a crash), recover() puts it back.
+        prefs(context).edit().putString(PENDING, (others + me.flattenToString()).joinToString(":")).commit()
         return try {
             Settings.Secure.putString(resolver, key, others.joinToString(":").ifEmpty { null })
             delay(700) // let the system notice it's off before turning it back on
             Settings.Secure.putString(resolver, key, (others + me.flattenToString()).joinToString(":"))
             Settings.Secure.putString(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, "1")
+            prefs(context).edit().remove(PENDING).commit()
             var tries = 0
             while (!bound(context) && tries++ < 10) delay(200)
             bound(context).also { Log.i(TAG, "overlay restart -> $it") }
@@ -75,5 +78,25 @@ object OverlayHealth {
         }
     }
 
+    /**
+     * Finishes a [restart] that was cut off half way (the app was killed while the
+     * service was switched off), so the overlay is never left off by accident.
+     */
+    fun recover(context: Context) {
+        val pending = prefs(context).getString(PENDING, null) ?: return
+        if (!canRestart(context)) return
+        runCatching {
+            if (!enabledInSettings(context)) {
+                Settings.Secure.putString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, pending)
+                Settings.Secure.putString(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, "1")
+                Log.i(TAG, "overlay restart recovered")
+            }
+        }
+        prefs(context).edit().remove(PENDING).commit()
+    }
+
+    private fun prefs(context: Context) = context.getSharedPreferences("overlay_health", Context.MODE_PRIVATE)
+
+    private const val PENDING = "restart_pending"
     private const val TAG = "AnimeBattery"
 }

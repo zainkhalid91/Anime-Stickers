@@ -78,8 +78,23 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
     private var powerSave = false
     private var lastPlugged: Boolean? = null
     private var snapshot = BatterySnapshot(50, plugged = false)
-    /** Set from adb for screen recordings: overrides the real battery. */
+    /** Set from adb or the app's battery test: overrides the real battery. */
     private var forced: BatterySnapshot? = null
+    private val endTest = Runnable { testBattery(null) }
+
+    /** The battery the bar is pretending to have, or null for the real one. */
+    val testing: BatterySnapshot? get() = forced
+
+    /**
+     * Show the bar as if the battery were [s] (null = back to the real battery).
+     * Ends by itself after [TEST_MS] so a forgotten test can't hide the real level.
+     */
+    fun testBattery(s: BatterySnapshot?) {
+        forced = s
+        handler.removeCallbacks(endTest)
+        if (s != null) handler.postDelayed(endTest, TEST_MS)
+        pushState()
+    }
 
     private val measureNow = Runnable { refresh(measure = true) }
 
@@ -329,7 +344,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
                 Log.i(TAG, "forced $forced")
                 pushState()
             }
-            "unforce" -> { forced = null; pushState() }
+            "unforce" -> testBattery(null)
             "say" -> full.view.say(extras.getStringExtra("text") ?: "hi!")
         }
     }
@@ -344,6 +359,7 @@ class StatusOverlayService : AccessibilityService(), SharedPreferences.OnSharedP
 
     companion object {
         private const val TAG = "AnimeBattery"
+        private const val TEST_MS = 10 * 60 * 1000L
         var instance: StatusOverlayService? = null
             private set
     }

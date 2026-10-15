@@ -51,11 +51,16 @@ class MainActivity : ComponentActivity() {
      * system a moment to bind it normally, then restart it if it's still missing.
      */
     private fun healOverlay() {
+        OverlayHealth.recover(this)
         if (healing || !OverlayHealth.canRestart(this)) return
         healing = true
         lifecycleScope.launch {
+            // Only if it still looks dead on a second look: binding can just be slow.
             delay(1500)
-            if (OverlayHealth.status(this@MainActivity) == OverlayHealth.Status.Stopped) OverlayHealth.restart(this@MainActivity)
+            if (OverlayHealth.status(this@MainActivity) == OverlayHealth.Status.Stopped) {
+                delay(2000)
+                if (OverlayHealth.status(this@MainActivity) == OverlayHealth.Status.Stopped) OverlayHealth.restart(this@MainActivity)
+            }
             healing = false
         }
     }

@@ -17,12 +17,15 @@ import android.view.View
 import android.view.ViewConfiguration
 import androidx.compose.ui.graphics.asAndroidBitmap
 import com.zainkhalid.animebattery.battery.BatteryState
+import com.zainkhalid.animebattery.cast.Cast
 import com.zainkhalid.animebattery.cast.Event
 import com.zainkhalid.animebattery.cast.Look
 import com.zainkhalid.animebattery.cast.look
 import com.zainkhalid.animebattery.characters.CharacterAnimator
 import com.zainkhalid.animebattery.characters.Characters
 import com.zainkhalid.animebattery.decor.BarLayout
+import com.zainkhalid.animebattery.decor.ChargeFx
+import com.zainkhalid.animebattery.decor.ChargePainter
 import com.zainkhalid.animebattery.decor.DecorPainter
 import com.zainkhalid.animebattery.decor.DecorType
 import com.zainkhalid.animebattery.decor.Lines
@@ -55,9 +58,10 @@ import kotlin.math.sin
  * flick to swing it round the camera, long-press to make it hide in the camera.
  * [HangPhysics] moves it and [StickerMesh] bends the sticker like jelly.
  *
- * Frame rate: 8 fps only while something visibly moves (sway, floating decor, the
- * charging orb, a moving mood); every vsync only while the rope is moving after a
- * touch; otherwise the character animator's slow idle clock; 0 when nothing moves.
+ * Frame rate: 25 fps only while something visibly moves (sway, floating decor, the
+ * charging prop, a moving mood); every vsync while the rope moves after a touch or a
+ * pose change is fading; otherwise the character animator's slow idle clock; 0 when
+ * nothing moves.
  */
 class FullBarView(context: Context) : View(context) {
 
@@ -140,9 +144,7 @@ class FullBarView(context: Context) : View(context) {
     private val dim = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bgPaint = Paint()
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG)
-    private val orb = Paint(Paint.ANTI_ALIAS_FLAG)
     private val thread = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
-    private val orbLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val battLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val path = Path()
     private val rect = RectF()
@@ -166,14 +168,14 @@ class FullBarView(context: Context) : View(context) {
 
     private fun standingTop(): Float = ((barHeight - sizePx) / 2f).coerceAtLeast(2f * d)
 
-    /** Thread length for the hanging pose: longer as the battery runs down. */
-    private fun threadLength(): Float = sizePx * 0.25f + sizePx * 0.9f * (100 - level) / 100f
+    /** Thread length for the hanging pose. Fixed: the battery shows in the pose, not the rope. */
+    private fun threadLength(): Float = sizePx * 0.55f
 
     /** Total window height: the bar plus anything hanging below it, and the bubble while it shows. */
     fun neededHeight(): Int {
         cameraRect(rect)
         var bottom = when (layout.pose) {
-            Pose.Hanging -> rect.bottom + sizePx * 1.15f + sizePx * 0.25f + sizePx * 0.9f
+            Pose.Hanging -> rect.bottom + threadLength() + sizePx * 1.3f
             Pose.Eyes -> barHeight.toFloat()
             else -> standingTop() + sizePx + 4f * d
         }
@@ -476,7 +478,8 @@ class FullBarView(context: Context) : View(context) {
             invalidate()
             delay = 33
         }
-        if (physics && hang.active && isAttachedToWindow) {
+        if ((physics && hang.active || easing(now)) && isAttachedToWindow) {
+            if (!physics) invalidate()
             postOnAnimation(tick)
             return
         }
@@ -599,7 +602,10 @@ class FullBarView(context: Context) : View(context) {
         hang.dragging -> Look.Grabbed
         reaction == Mood.Fainting -> Look.Dizzy
         reaction == Mood.Hyped -> Look.Cheer
-        else -> mood.look(hanging = layout.pose == Pose.Hanging)
+        else -> mood.look(hanging = layout.pose == Pose.Hanging).let {
+            // No art for that mood yet: keep holding the rope rather than standing on air.
+            if (layout.pose == Pose.Hanging && it != Look.Hang && !StickerCache.hasOwn(context, characterId, it)) Look.Hang else it
+        }
     }
 
     // The sticker for the current size and look, kept so a frame doesn't even build a cache key.
@@ -612,6 +618,13 @@ class FullBarView(context: Context) : View(context) {
         val px = sizePx.roundToInt()
         val look = currentLook()
         if (px != stickerPx || characterId != stickerKey || look != stickerLook) {
+            // Same character, new pose: fade the old one out instead of snapping.
+            if (stickerBmp != null && characterId == stickerKey && px == stickerPx && look != stickerLook) {
+                swapFrom = stickerBmp
+                swapStartMs = SystemClock.uptimeMillis()
+            } else {
+                swapFrom = null
+            }
             stickerBmp = StickerCache.get(context, characterId, look, px)?.asAndroidBitmap()
             stickerPx = px
             stickerKey = characterId
@@ -638,20 +651,38 @@ class FullBarView(context: Context) : View(context) {
             val inCamera = (len / (sizePx * 0.5f)).coerceIn(0.12f, 1f)
             if (inCamera < 1f) c.scale(inCamera, inCamera, px, py)
         }
-        val left = px - sw / 2f
-        if (findGrips(sticker)) {
-            // Holding-the-rope art: the thread splits at a knot and runs to both fists.
-            val knot = py + len
-            val top = knot + sizePx * 0.10f
+        val now = SystemClock.uptimeMillis()
+        // Holding-the-rope art hangs below a knot from both fists; other art hangs by
+        // the top of its head. Ease between the two so a pose change doesn't jump.
+        val grips = findGrips(sticker)
+        val target = if (grips) 0.10f else -0.06f
+        // Two fists: centred under the knot. One thread: tied to the highest point.
+        val attach = if (grips) 0.5f else topAttach(sticker)
+        if (dropNow.isNaN()) { dropNow = target; dropTarget = target; attachNow = attach; attachTarget = attach }
+        if (target != dropTarget || attach != attachTarget) {
+            dropFrom = dropNow
+            dropTarget = target
+            attachFrom = attachNow
+            attachTarget = attach
+            dropStartMs = now
+        }
+        val k = ease(dropStartMs, now)
+        dropNow = dropFrom + (dropTarget - dropFrom) * k
+        attachNow = attachFrom + (attachTarget - attachFrom) * k
+        val left = px - sw * attachNow
+        forkNow = if (grips) (if (dropTarget > dropFrom) k else 1f) else (if (dropTarget < dropFrom) 1f - k else 0f)
+        val knot = py + len
+        val top = knot + sizePx * dropNow
+        if (grips && forkNow > 0f) {
+            val a = thread.alpha
+            thread.alpha = (a * forkNow).toInt()
             c.drawLine(px, knot, left + gripLx, top + gripLy, thread)
             c.drawLine(px, knot, left + gripRx, top + gripRy, thread)
-            gripped = true
-            drawCharacter(c, sticker, left, top)
-            gripped = false
-        } else {
-            // Otherwise it hangs from the end of the thread by the top of its head.
-            drawCharacter(c, sticker, left, py + len - sizePx * 0.06f)
+            thread.alpha = a
         }
+        gripped = grips
+        drawCharacter(c, sticker, left, top)
+        gripped = false
         c.restore()
         val rad = Math.toRadians(-deg.toDouble())
         charX = px + (sin(rad) * len).toFloat()
@@ -666,10 +697,64 @@ class FullBarView(context: Context) : View(context) {
     private var gripRy = 0f
     /** Drawing a gripping sticker: the rope holds it upright, so no mood lean. */
     private var gripped = false
+    /** x of the highest point of the art (where a single thread ties on), as a fraction. */
+    private var topU = 0.5f
+    private var topUOf: Bitmap? = null
+    private var attachNow = Float.NaN
+    private var attachFrom = 0.5f
+    private var attachTarget = 0.5f
+
+    /** Where a single thread ties on: the highest solid point, kept near the middle. */
+    private fun topAttach(bmp: Bitmap): Float {
+        if (topUOf === bmp) return topU
+        topUOf = bmp
+        topU = 0.5f
+        val w = bmp.width
+        loop@ for (y in 0 until (bmp.height * 0.3f).toInt()) for (x in 0 until w) {
+            if ((bmp.getPixel(x, y) ushr 24) > 160) { topU = (x / w.toFloat()).coerceIn(0.2f, 0.8f); break@loop }
+        }
+        return topU
+    }
+    private val charge = ChargePainter(d)
+    private var chargeFx = ChargeFx.None
+
+    // Smoothing: pose swaps crossfade, the rope's attach point and the mood lean ease.
+    private var swapFrom: Bitmap? = null
+    private var swapStartMs = -1_000L
+    private var dropNow = Float.NaN
+    private var dropFrom = 0f
+    private var dropTarget = 0f
+    private var dropStartMs = -1_000L
+    private var forkNow = 0f
+    private var tiltNow = 0f
+    private var lastDrawMs = 0L
+
+    /** 0..1 eased progress of a [SWAP_MS] transition that started at [start]. */
+    private fun ease(start: Long, now: Long): Float {
+        val k = ((now - start) / SWAP_MS.toFloat()).coerceIn(0f, 1f)
+        return k * k * (3f - 2f * k)
+    }
+
+    /** Something is mid-transition and needs smooth frames. */
+    private fun easing(now: Long): Boolean =
+        now - swapStartMs < SWAP_MS || now - dropStartMs < SWAP_MS ||
+            abs(tiltNow - ((reaction ?: mood).tiltDeg)) > 0.2f
+
+    private var chargeOf: String? = null
+
+    /** The current character's charging prop. */
+    private fun chargeProp(): ChargeFx {
+        if (chargeOf != characterId) {
+            chargeOf = characterId
+            chargeFx = Cast.find(characterId)?.charge ?: ChargeFx.None
+        }
+        return chargeFx
+    }
 
     /**
-     * For the hang look: the highest solid point in the left and right thirds of the
-     * sticker, i.e. the raised fists. False for other looks or if the arms aren't up.
+     * For the hang look: two raised fists, i.e. the highest solid points in the left and
+     * right thirds are about as high as anything in the middle. A single rope held
+     * above the head (or hair buns lower than the middle) means one thread, not two.
      */
     private fun findGrips(bmp: Bitmap): Boolean {
         if (stickerLook != Look.Hang) return false
@@ -684,11 +769,13 @@ class FullBarView(context: Context) : View(context) {
             return null
         }
         val l = highest(0, (w * 0.38f).toInt())
+        val m = highest((w * 0.38f).toInt(), (w * 0.62f).toInt())
         val r = highest((w * 0.62f).toInt(), w)
-        gripsOk = l != null && r != null
-        if (l != null && r != null) {
-            gripLx = l.first; gripLy = l.second
-            gripRx = r.first; gripRy = r.second
+        val slack = h * GRIP_SLACK
+        gripsOk = l != null && r != null && (m == null || (l.second <= m.second + slack && r.second <= m.second + slack))
+        if (gripsOk) {
+            gripLx = l!!.first; gripLy = l.second
+            gripRx = r!!.first; gripRy = r.second
         }
         return gripsOk
     }
@@ -720,9 +807,26 @@ class FullBarView(context: Context) : View(context) {
         val y = (top + bob).roundToInt().toFloat()
         val x = left.roundToInt().toFloat()
         moods.behind(c, m, x, y, sw, s, step)
+        val now = SystemClock.uptimeMillis()
+        val dt = ((now - lastDrawMs).coerceIn(0L, 100L)) / 1000f
+        lastDrawMs = now
+        // Leans over a bit as the mood gets worse, pivoting on the feet; eases in.
+        val tiltTarget = if (gripped) 0f else m.tiltDeg
+        tiltNow += (tiltTarget - tiltNow) * (dt * 7f).coerceAtMost(1f)
         c.save()
-        // Leans over a bit as the mood gets worse, pivoting on the feet.
-        if (m.tiltDeg != 0f && !gripped) c.rotate(m.tiltDeg, left + sw / 2f, top + s)
+        if (abs(tiltNow) > 0.05f) c.rotate(tiltNow, left + sw / 2f, top + s)
+        // The pose we're leaving fades out underneath.
+        val fade = ease(swapStartMs, now)
+        val old = swapFrom
+        if (old != null && fade < 1f) {
+            bmpPaint.alpha = (255 * (1f - fade)).toInt()
+            c.drawBitmap(old, (left + (sw - old.width) / 2f).roundToInt().toFloat(), y + (s - old.height), bmpPaint)
+            bmpPaint.alpha = 255
+        } else if (fade >= 1f) {
+            swapFrom = null
+        }
+        mesh.alpha = if (old != null && fade < 1f) (255 * fade).toInt() else 255
+        bmpPaint.alpha = mesh.alpha
         c.scale(1f + 0.10f * squash, 1f - 0.14f * squash, left + sw / 2f, top + s)
         val stretch = if (layout.pose == Pose.Hanging) (hang.stretch / (sizePx * 6f)).coerceIn(-0.1f, 0.3f) else 0f
         if (layout.pose == Pose.Hanging && mesh.deforms(hang.wobble, stretch, hang.squash)) {
@@ -730,12 +834,15 @@ class FullBarView(context: Context) : View(context) {
         } else {
             c.drawBitmap(sticker, x, y, bmpPaint)
         }
+        bmpPaint.alpha = 255
+        mesh.alpha = 255
         if (layout.decor.any { it.type == DecorType.WitchHat }) decor.witchHat(c, x, y, sw, s)
         // Held by the rope: a nervous sweat drop, whatever the battery says.
         moods.front(c, if (hang.dragging) Mood.Tired else m, x, y, sw, s, phase, step)
         c.restore()
         if (state == BatteryState.Charging) {
-            drawOrb(c, left + sticker.width * 0.70f, top + bob + s * 0.77f, s * 0.13f, f.chargeFrame)
+            // Each character's own charging prop, floating beside them.
+            charge.draw(c, chargeProp(), left + sw + s * 0.08f, top + bob + s * 0.55f, s * 0.13f, f.chargeFrame)
         }
     }
 
@@ -783,20 +890,6 @@ class FullBarView(context: Context) : View(context) {
         c.drawPath(path, paint)
     }
 
-    private fun drawOrb(c: Canvas, x: Float, y: Float, r: Float, frame: Int) {
-        orb.color = 0x553A9BFF
-        c.drawCircle(x, y, r * 1.7f, orb)
-        orb.color = 0xFF8FD8FF.toInt()
-        c.drawCircle(x, y, r, orb)
-        orb.color = Color.WHITE
-        c.drawCircle(x, y, r * 0.45f, orb)
-        orbLine.strokeWidth = r * 0.22f
-        rect.set(x - r * 0.72f, y - r * 0.72f, x + r * 0.72f, y + r * 0.72f)
-        orbLine.color = Color.WHITE
-        c.drawArc(rect, frame * 36f, 120f, false, orbLine)
-        orbLine.color = 0xFF2C8BE6.toInt()
-        c.drawArc(rect, frame * 36f + 180f, 120f, false, orbLine)
-    }
 
     private fun luminance(c: Int) =
         (0.2126f * Color.red(c) + 0.7152f * Color.green(c) + 0.0722f * Color.blue(c)) / 255f
@@ -813,7 +906,9 @@ class FullBarView(context: Context) : View(context) {
 
     companion object {
         private const val STEP_MS = 500L
-        private const val MOTION_FRAME_MS = 125L
+        /** Sway and floating decor: 25 fps, smooth enough without costing much. */
+        private const val MOTION_FRAME_MS = 40L
+        private const val SWAP_MS = 220L
         private const val MOTION_PERIOD_MS = 2600L
         private val MOVING = setOf(DecorType.Heart, DecorType.Ghost, DecorType.Spider, DecorType.Leaf, DecorType.Wings, DecorType.Bat)
         private const val BUBBLE_MS = 4000L
@@ -823,6 +918,8 @@ class FullBarView(context: Context) : View(context) {
         private const val DOUBLE_TAP_MS = 300L
         private const val HIDE_MS = 5000L
         private const val HURT_MS = 1600L
+        /** How much lower than the middle a fist may be and still count as raised. */
+        private const val GRIP_SLACK = 0.05f
         private val PERCENT = Array(101) { "$it%" }
     }
 }

@@ -297,11 +297,18 @@ Goal: reasons to come back that feel good, never guilty.
 - **Animation approach:** no frame-by-frame video (no video model on this PC, AI video drifts off-model, and it would cost battery). Instead: a few AI pose stickers per character, real physics, and mesh deformation of one still image.
 
 #### 4.1 The cast: 5 characters, 7 looks, their own voices
-- **Who:** Naruto, Luffy, Gojo, Anya, and Claude (an original: how Claude would draw itself in an anime: fluffy terracotta hair, orange spark clip, round glasses, oversized cream sweater, notebook; kind, curious, honest).
+- **Who:** Naruto, Luffy, Gojo, Anya, and Kotoha (言葉 "words" + 葉 "leaf"; an original: how Claude would draw itself in an anime: fluffy terracotta hair, orange spark clip, round glasses, oversized cream sweater, notebook; kind, curious, honest).
 - **Looks:** idle, hang (holding the rope), grabbed, dizzy, sleep, cheer, hurt. Picked by what's happening: hurt after a bonk, grabbed while held, dizzy after spins or at critical battery, sleep in power saver, cheer when full or double-tapped, else hang/idle. Missing looks fall back to idle.
 - **Voices:** every character has its own lines for each mood and each event (poke, grab, fling, dizzy, cheer, hide, peek, hurt) in `cast/Cast.kt`.
 - **Art pipeline:** `tools/gen_cast.py` renders every look with the local ComfyUI (Animagine XL 4.0, same recipe as the first Naruto, 832 px, 22 steps) → `tools/cast_stickers.py` cuts them out with `tools/cutout.py` into `res/drawable-nodpi/sticker_<id>_<look>.png` and writes a review sheet. Pick a different seed per look in `art/raw/cast/picks.txt`. New art needs no code: stickers are found by name.
 - **Note:** on this laptop GPU (GTX 1660 Ti, 6 GB) one render takes ~4–10 min, more if Gradle or Android Studio is holding RAM. Run `./gradlew --stop` before a batch.
+
+#### 4.1b Per-character touches (2026-10-05)
+- **Charging props:** Naruto Rasengan, Luffy meat, Gojo Hollow Purple, Anya peanut, Kotoha a turning orange spark; characters you make get none (`decor/ChargePainter.kt`, `CastMember.charge`).
+- **Threads:** forked to both fists only when the art has two raised fists; otherwise one thread tied to the highest point of the art.
+- **Smoothness:** pose swaps crossfade (220 ms), the attach point and mood lean ease, sway runs at 25 fps.
+- **Master switch** on Buddy and a **Quick Settings tile** (hide everything instantly); **battery test** slider with Charging / Hot / Power saver that drives the real status bar for up to 10 minutes.
+- Re-run the battery report in `docs/PERFORMANCE.md`: the 25 fps sway costs more than the old 8 fps.
 
 #### 4.2 Make your own character
 - **What:** pick a photo (your pet, your OC, fan art) → cut out on the phone → white sticker border → name it → it lives in your status bar. Uses generic lines and the idle look for every pose.
